@@ -23,11 +23,17 @@ public:
     bool          IsInitialized() const noexcept { return m_pSystem != nullptr; }
     FMOD::System* GetSystem() const noexcept { return m_pSystem; }
 
+    // Error inspection — valid after any method that can fail
+    FMOD_RESULT GetLastResult() const noexcept { return m_lastResult; }
+    const char* GetLastErrorString() const noexcept;
+
     // Called every frame from CCore::DoPostFramePulse
     void Update(const CVector& vecPosition, const CVector& vecForward, const CVector& vecUp);
 
-    // Sound lifetime
+    // Sound lifetime — CreateSound loads fully into RAM; CreateStream decodes on the fly (long tracks)
     uint32_t CreateSound(const char* path, bool b3D, bool bLoop = false);
+    uint32_t CreateStream(const char* path, bool b3D, bool bLoop = false);
+    uint32_t CreateSoundFromMemory(const void* pData, size_t dataSize, bool b3D, bool bLoop = false);
     void     FreeSound(uint32_t soundId);
 
     // Playback — returns channel handle (0 on failure)
@@ -35,16 +41,25 @@ public:
 
     // Channel control
     bool StopChannel(uint32_t channelId);
+    bool PauseChannel(uint32_t channelId, bool bPause);
+    bool IsChannelPaused(uint32_t channelId);
     bool SetChannelVolume(uint32_t channelId, float volume);
     bool SetChannelPitch(uint32_t channelId, float pitch);
     bool SetChannelPosition(uint32_t channelId, float x, float y, float z);
+    bool SetChannelVelocity(uint32_t channelId, float vx, float vy, float vz);
+    bool SetChannelLooped(uint32_t channelId, bool bLoop);
     bool IsChannelPlaying(uint32_t channelId);
 
+    // Channel read-back
+    bool GetChannelLooped(uint32_t channelId, bool& outLooped);
+    bool GetChannelPosition3D(uint32_t channelId, float& outX, float& outY, float& outZ);
+    bool GetChannelVolume(uint32_t channelId, float& outVolume);
+    bool GetChannelPitch(uint32_t channelId, float& outPitch);
+
     // Reverb — slot 0 is the global environment reverb
-    // Channels do NOT receive reverb automatically; call SetChannelReverbWet to opt in.
     void SetReverbPreset(const char* presetName);
-    void SetReverbWetLevel(float wetDB);                       // override WetLevel of current preset (dB, -80..20)
-    bool SetChannelReverbWet(uint32_t channelId, float wetDB); // connect channel to reverb slot 0 (dB: 0=unity, -80=off)
+    void SetReverbWetLevel(float wetDB);
+    bool SetChannelReverbWet(uint32_t channelId, float wetDB);
 
     // Master volume for all FMOD sounds (0.0 – 1.0, default 0.5)
     void  SetMasterVolume(float volume);
@@ -58,11 +73,17 @@ public:
     void  SetParameter(const char* name, float value);
     float GetParameter(const char* name, float defaultValue = 0.0f) const;
 
+    // Version string, e.g. "2.02.21"
+    SString GetVersion() const;
+
 private:
+    uint32_t       CreateSoundInternal(const char* path, bool b3D, bool bLoop, bool bStream);
     FMOD::Channel* GetChannel(uint32_t channelId);
 
     FMOD::System*       m_pSystem;
-    FMOD::ChannelGroup* m_pMasterGroup;   // all FMOD sounds route through here
+    FMOD::ChannelGroup* m_pMasterGroup;
+
+    FMOD_RESULT m_lastResult{FMOD_OK};
 
     struct SoundInfo
     {
@@ -73,16 +94,18 @@ private:
     struct ChannelInfo
     {
         FMOD::Channel* pChannel;
-        FMOD::DSP*     pEchoDSP  = nullptr;   // owned; nullptr = no echo active
+        FMOD::DSP*     pEchoDSP  = nullptr;
         bool           b3D;
-        float          reverbWet;   // dB stored so we can re-apply on preset change; -999 = not opted in
+        float          reverbWet;
+        // Stored so SetChannelVelocity can re-apply position in the same call
+        float velX = 0.f, velY = 0.f, velZ = 0.f;
     };
 
     std::unordered_map<uint32_t, SoundInfo>   m_sounds;
     std::unordered_map<uint32_t, ChannelInfo> m_channels;
     std::unordered_map<std::string, float>    m_parameters;
 
-    FMOD_REVERB_PROPERTIES m_reverbProps;   // current slot-0 properties (stored for WetLevel edits)
+    FMOD_REVERB_PROPERTIES m_reverbProps;
 
     uint32_t m_nextSoundId{1};
     uint32_t m_nextChannelId{1};

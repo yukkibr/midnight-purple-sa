@@ -14,19 +14,36 @@ class CLuaFMODDefs : public CLuaDefs
 public:
     static void LoadFunctions();
 
+    // Version / diagnostics
+    LUA_DECLARE(FMODGetVersion);
+    LUA_DECLARE(FMODGetLastError);
+
     // Sound lifetime
     LUA_DECLARE(FMODCreateSound);
+    LUA_DECLARE(FMODCreateStream);
+    LUA_DECLARE(FMODCreateSoundFromMemory);
     LUA_DECLARE(FMODFreeSound);
 
     // Playback
     LUA_DECLARE(FMODPlaySound);
     LUA_DECLARE(FMODStopSound);
+    LUA_DECLARE(FMODPauseSound);
+    LUA_DECLARE(FMODResumeSound);
+    LUA_DECLARE(FMODIsSoundPaused);
+    LUA_DECLARE(FMODIsSoundPlaying);
 
     // Channel control
     LUA_DECLARE(FMODSetSoundVolume);
     LUA_DECLARE(FMODSetSoundPitch);
     LUA_DECLARE(FMODSetSoundPosition);
-    LUA_DECLARE(FMODIsSoundPlaying);
+    LUA_DECLARE(FMODSetSoundVelocity);
+    LUA_DECLARE(FMODSetSoundLooped);
+
+    // Channel read-back
+    LUA_DECLARE(FMODGetSoundVolume);
+    LUA_DECLARE(FMODGetSoundPitch);
+    LUA_DECLARE(FMODGetSoundPosition);
+    LUA_DECLARE(FMODGetSoundLooped);
 
     // Reverb
     LUA_DECLARE(FMODSetReverbPreset);

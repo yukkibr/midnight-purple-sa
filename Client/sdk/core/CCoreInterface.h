@@ -193,14 +193,37 @@ public:
     virtual void OnPostColorFilterRender() = 0;
 
     // FMOD audio engine — handle-based API (no FMOD headers needed by callers)
+
+    // Error inspection — always valid; reflects the last FMOD operation attempted
+    virtual int         FMODGetLastError() const = 0;
+    virtual const char* FMODGetLastErrorString() const = 0;
+    virtual SString     FMODGetVersion() const = 0;
+
+    // Sound lifetime
     virtual uint32_t FMODCreateSound(const char* path, bool b3D, bool bLoop = false) = 0;
+    virtual uint32_t FMODCreateStream(const char* path, bool b3D, bool bLoop = false) = 0;
+    virtual uint32_t FMODCreateSoundFromMemory(const void* pData, size_t dataSize, bool b3D, bool bLoop = false) = 0;
     virtual void     FMODFreeSound(uint32_t soundId) = 0;
+
+    // Playback
     virtual uint32_t FMODPlaySound(uint32_t soundId, float x, float y, float z, float minDist, float maxDist) = 0;
     virtual bool     FMODStopChannel(uint32_t channelId) = 0;
+    virtual bool     FMODPauseChannel(uint32_t channelId, bool bPause) = 0;
+    virtual bool     FMODIsChannelPaused(uint32_t channelId) = 0;
+    virtual bool     FMODIsChannelPlaying(uint32_t channelId) = 0;
+
+    // Channel control
     virtual bool     FMODSetChannelVolume(uint32_t channelId, float volume) = 0;
     virtual bool     FMODSetChannelPitch(uint32_t channelId, float pitch) = 0;
     virtual bool     FMODSetChannelPosition(uint32_t channelId, float x, float y, float z) = 0;
-    virtual bool     FMODIsChannelPlaying(uint32_t channelId) = 0;
+    virtual bool     FMODSetChannelVelocity(uint32_t channelId, float vx, float vy, float vz) = 0;
+    virtual bool     FMODSetChannelLooped(uint32_t channelId, bool bLoop) = 0;
+
+    // Channel read-back
+    virtual bool     FMODGetChannelLooped(uint32_t channelId, bool& outLooped) = 0;
+    virtual bool     FMODGetChannelPosition3D(uint32_t channelId, float& outX, float& outY, float& outZ) = 0;
+    virtual bool     FMODGetChannelVolume(uint32_t channelId, float& outVolume) = 0;
+    virtual bool     FMODGetChannelPitch(uint32_t channelId, float& outPitch) = 0;
 
     // Reverb environment (slot 0)
     virtual void     FMODSetReverbPreset(const char* presetName) = 0;

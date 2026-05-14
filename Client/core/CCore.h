@@ -302,23 +302,36 @@ public:
     void OnPostColorFilterRender() override;
 
     // FMOD audio engine — CCoreInterface overrides
-    uint32_t FMODCreateSound(const char* path, bool b3D, bool bLoop = false) override;
-    void     FMODFreeSound(uint32_t soundId) override;
-    uint32_t FMODPlaySound(uint32_t soundId, float x, float y, float z, float minDist, float maxDist) override;
-    bool     FMODStopChannel(uint32_t channelId) override;
-    bool     FMODSetChannelVolume(uint32_t channelId, float volume) override;
-    bool     FMODSetChannelPitch(uint32_t channelId, float pitch) override;
-    bool     FMODSetChannelPosition(uint32_t channelId, float x, float y, float z) override;
-    bool     FMODIsChannelPlaying(uint32_t channelId) override;
-    void     FMODSetReverbPreset(const char* presetName) override;
-    void     FMODSetReverbWetLevel(float wetDB) override;
-    bool     FMODSetChannelReverbWet(uint32_t channelId, float wetDB) override;
-    void     FMODSetMasterVolume(float volume) override;
-    float    FMODGetMasterVolume() const override;
-    bool     FMODApplyChannelEcho(uint32_t channelId, float delayMS, float feedbackPct, float wetDB) override;
-    bool     FMODRemoveChannelEcho(uint32_t channelId) override;
-    void     FMODSetParameter(const char* name, float value) override;
-    float    FMODGetParameter(const char* name, float defaultValue) override;
+    int         FMODGetLastError() const override;
+    const char* FMODGetLastErrorString() const override;
+    SString     FMODGetVersion() const override;
+    uint32_t    FMODCreateSound(const char* path, bool b3D, bool bLoop = false) override;
+    uint32_t    FMODCreateStream(const char* path, bool b3D, bool bLoop = false) override;
+    uint32_t    FMODCreateSoundFromMemory(const void* pData, size_t dataSize, bool b3D, bool bLoop = false) override;
+    void        FMODFreeSound(uint32_t soundId) override;
+    uint32_t    FMODPlaySound(uint32_t soundId, float x, float y, float z, float minDist, float maxDist) override;
+    bool        FMODStopChannel(uint32_t channelId) override;
+    bool        FMODPauseChannel(uint32_t channelId, bool bPause) override;
+    bool        FMODIsChannelPaused(uint32_t channelId) override;
+    bool        FMODIsChannelPlaying(uint32_t channelId) override;
+    bool        FMODSetChannelVolume(uint32_t channelId, float volume) override;
+    bool        FMODSetChannelPitch(uint32_t channelId, float pitch) override;
+    bool        FMODSetChannelPosition(uint32_t channelId, float x, float y, float z) override;
+    bool        FMODSetChannelVelocity(uint32_t channelId, float vx, float vy, float vz) override;
+    bool        FMODSetChannelLooped(uint32_t channelId, bool bLoop) override;
+    bool        FMODGetChannelLooped(uint32_t channelId, bool& outLooped) override;
+    bool        FMODGetChannelPosition3D(uint32_t channelId, float& outX, float& outY, float& outZ) override;
+    bool        FMODGetChannelVolume(uint32_t channelId, float& outVolume) override;
+    bool        FMODGetChannelPitch(uint32_t channelId, float& outPitch) override;
+    void        FMODSetReverbPreset(const char* presetName) override;
+    void        FMODSetReverbWetLevel(float wetDB) override;
+    bool        FMODSetChannelReverbWet(uint32_t channelId, float wetDB) override;
+    void        FMODSetMasterVolume(float volume) override;
+    float       FMODGetMasterVolume() const override;
+    bool        FMODApplyChannelEcho(uint32_t channelId, float delayMS, float feedbackPct, float wetDB) override;
+    bool        FMODRemoveChannelEcho(uint32_t channelId) override;
+    void        FMODSetParameter(const char* name, float value) override;
+    float       FMODGetParameter(const char* name, float defaultValue) override;
 
 private:
     void ApplyCoreInitSettings();

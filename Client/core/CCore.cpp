@@ -1478,9 +1478,37 @@ void CCore::DoPostFramePulse()
 }
 
 // FMOD CCoreInterface overrides — delegate to CFMODManager
+
+int CCore::FMODGetLastError() const
+{
+    return m_pFMODManager ? static_cast<int>(m_pFMODManager->GetLastResult()) : 0;
+}
+
+const char* CCore::FMODGetLastErrorString() const
+{
+    return m_pFMODManager ? m_pFMODManager->GetLastErrorString() : "FMOD not initialized";
+}
+
+SString CCore::FMODGetVersion() const
+{
+    if (!m_pFMODManager)
+        return "unavailable";
+    return m_pFMODManager->GetVersion();
+}
+
 uint32_t CCore::FMODCreateSound(const char* path, bool b3D, bool bLoop)
 {
     return m_pFMODManager ? m_pFMODManager->CreateSound(path, b3D, bLoop) : 0;
+}
+
+uint32_t CCore::FMODCreateStream(const char* path, bool b3D, bool bLoop)
+{
+    return m_pFMODManager ? m_pFMODManager->CreateStream(path, b3D, bLoop) : 0;
+}
+
+uint32_t CCore::FMODCreateSoundFromMemory(const void* pData, size_t dataSize, bool b3D, bool bLoop)
+{
+    return m_pFMODManager ? m_pFMODManager->CreateSoundFromMemory(pData, dataSize, b3D, bLoop) : 0;
 }
 
 void CCore::FMODFreeSound(uint32_t soundId)
@@ -1499,6 +1527,21 @@ bool CCore::FMODStopChannel(uint32_t channelId)
     return m_pFMODManager && m_pFMODManager->StopChannel(channelId);
 }
 
+bool CCore::FMODPauseChannel(uint32_t channelId, bool bPause)
+{
+    return m_pFMODManager && m_pFMODManager->PauseChannel(channelId, bPause);
+}
+
+bool CCore::FMODIsChannelPaused(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->IsChannelPaused(channelId);
+}
+
+bool CCore::FMODIsChannelPlaying(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->IsChannelPlaying(channelId);
+}
+
 bool CCore::FMODSetChannelVolume(uint32_t channelId, float volume)
 {
     return m_pFMODManager && m_pFMODManager->SetChannelVolume(channelId, volume);
@@ -1514,9 +1557,34 @@ bool CCore::FMODSetChannelPosition(uint32_t channelId, float x, float y, float z
     return m_pFMODManager && m_pFMODManager->SetChannelPosition(channelId, x, y, z);
 }
 
-bool CCore::FMODIsChannelPlaying(uint32_t channelId)
+bool CCore::FMODSetChannelVelocity(uint32_t channelId, float vx, float vy, float vz)
 {
-    return m_pFMODManager && m_pFMODManager->IsChannelPlaying(channelId);
+    return m_pFMODManager && m_pFMODManager->SetChannelVelocity(channelId, vx, vy, vz);
+}
+
+bool CCore::FMODSetChannelLooped(uint32_t channelId, bool bLoop)
+{
+    return m_pFMODManager && m_pFMODManager->SetChannelLooped(channelId, bLoop);
+}
+
+bool CCore::FMODGetChannelLooped(uint32_t channelId, bool& outLooped)
+{
+    return m_pFMODManager && m_pFMODManager->GetChannelLooped(channelId, outLooped);
+}
+
+bool CCore::FMODGetChannelPosition3D(uint32_t channelId, float& outX, float& outY, float& outZ)
+{
+    return m_pFMODManager && m_pFMODManager->GetChannelPosition3D(channelId, outX, outY, outZ);
+}
+
+bool CCore::FMODGetChannelVolume(uint32_t channelId, float& outVolume)
+{
+    return m_pFMODManager && m_pFMODManager->GetChannelVolume(channelId, outVolume);
+}
+
+bool CCore::FMODGetChannelPitch(uint32_t channelId, float& outPitch)
+{
+    return m_pFMODManager && m_pFMODManager->GetChannelPitch(channelId, outPitch);
 }
 
 void CCore::FMODSetReverbPreset(const char* presetName)
@@ -1547,6 +1615,16 @@ float CCore::FMODGetMasterVolume() const
     return m_pFMODManager ? m_pFMODManager->GetMasterVolume() : 0.0f;
 }
 
+bool CCore::FMODApplyChannelEcho(uint32_t channelId, float delayMS, float feedbackPct, float wetDB)
+{
+    return m_pFMODManager && m_pFMODManager->ApplyChannelEcho(channelId, delayMS, feedbackPct, wetDB);
+}
+
+bool CCore::FMODRemoveChannelEcho(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->RemoveChannelEcho(channelId);
+}
+
 void CCore::FMODSetParameter(const char* name, float value)
 {
     if (m_pFMODManager)
@@ -1556,16 +1634,6 @@ void CCore::FMODSetParameter(const char* name, float value)
 float CCore::FMODGetParameter(const char* name, float defaultValue)
 {
     return m_pFMODManager ? m_pFMODManager->GetParameter(name, defaultValue) : defaultValue;
-}
-
-bool CCore::FMODApplyChannelEcho(uint32_t channelId, float delayMS, float feedbackPct, float wetDB)
-{
-    return m_pFMODManager && m_pFMODManager->ApplyChannelEcho(channelId, delayMS, feedbackPct, wetDB);
-}
-
-bool CCore::FMODRemoveChannelEcho(uint32_t channelId)
-{
-    return m_pFMODManager && m_pFMODManager->RemoveChannelEcho(channelId);
 }
 
 // Called after MOD is unloaded

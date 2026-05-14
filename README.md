@@ -32,6 +32,8 @@ All functions are available client-side. Sound and channel IDs are plain integer
 | Function | Returns | Description |
 |----------|---------|-------------|
 | `fmodCreateSound(path, [is3D=false], [loop=false])` | soundId / `false` | Load a sound asset from a resource path. |
+| `fmodCreateStream(path, [is3D=false], [loop=false])` | soundId / `false` | Stream a long audio file from disk (music-quality, lower RAM). |
+| `fmodCreateSoundFromMemory(data, [is3D=false], [loop=false])` | soundId / `false` | Load from a raw audio data string (e.g. TEA-decrypted `.wavlocked` contents). FMOD copies the buffer internally. |
 | `fmodFreeSound(soundId)` | bool | Release the sound and free its memory. |
 
 **Playback**
@@ -86,11 +88,11 @@ All functions are available client-side. Sound and channel IDs are plain integer
 The items below represent what is needed to consider the FMOD integration feature-complete.
 
 ### Core audio features
-- [ ] **Doppler effect** — pass per-channel velocity to `set3DAttributes` so moving sources shift pitch relative to the listener
-- [ ] **Pause / resume** — `fmodPauseSound(channelId)` / `fmodResumeSound(channelId)`
-- [ ] **Streaming audio** — create sounds via `FMOD_CREATESTREAM` for long music tracks, avoiding full decode into RAM
-- [ ] **Loop state toggle** — `fmodSetSoundLooped` / `fmodGetSoundLooped` to change loop mode after creation
-- [ ] **Read-back functions** — `fmodGetSoundPosition`, `fmodGetSoundVolume`, `fmodGetSoundPitch`
+- [x] **Doppler effect** — `fmodSetSoundVelocity(ch, vx, vy, vz)` feeds velocity to `set3DAttributes`; FMOD computes pitch shift automatically
+- [x] **Pause / resume** — `fmodPauseSound(ch)` / `fmodResumeSound(ch)` / `fmodIsSoundPaused(ch)`
+- [x] **Streaming audio** — `fmodCreateStream(path, [is3D], [loop])` uses `FMOD_CREATESTREAM`; identical API to `fmodCreateSound`
+- [x] **Loop state toggle** — `fmodSetSoundLooped(ch, bool)` / `fmodGetSoundLooped(ch)` — change loop mode on a live channel
+- [x] **Read-back functions** — `fmodGetSoundVolume(ch)`, `fmodGetSoundPitch(ch)`, `fmodGetSoundPosition(ch)` → x, y, z
 
 ### DSP / effects
 - [ ] **Additional DSP types** — low-pass / high-pass filter, distortion, flanger, chorus exposed as Lua functions
@@ -103,14 +105,15 @@ The items below represent what is needed to consider the FMOD integration featur
 - [ ] **Occlusion / obstruction** — geometry-aware audio muffling when solid objects are between a sound source and the listener (FMOD Geometry API)
 
 ### Vehicle engine sounds (primary motivator)
-- [ ] **Engine sound layer** — a dedicated `CEngineAudioController` that drives FMOD channel pitch and volume from vehicle RPM and speed each frame
-- [ ] **Per-vehicle sound bank** — assign custom sound assets to vehicle models via Lua (`fmodSetVehicleEngineSound(vehicleModel, soundId)`)
-- [ ] **Rev limiter / gear shift events** — fire one-shot FMOD sounds on gear change and rev limiter hit
+- [x] **Engine sound layer** — `hikari_engine` resource fully migrated to FMOD: RPM-driven pitch/volume per channel, environmental reverb opt-in, smooth echo fade, Doppler effect
+- [x] **Per-vehicle sound bank** — `engine_table.lua` assigns sound packs per engine type; `fmodCreateSoundFromMemory` loads TEA-decrypted `.wavlocked` assets into FMOD
+- [x] **Rev limiter / gear shift events** — one-shot BOV and backfire/ALS sounds fire via FMOD with Doppler velocity
 - [ ] **Exhaust 3D positioning** — bind the engine sound source to the vehicle's exhaust bone position instead of the vehicle origin
 
 ### Quality of life
-- [ ] **FMOD error propagation** — surface `FMOD_RESULT` codes back to Lua (`false, errorCode, errorString`) instead of plain `false`
-- [ ] **`fmodGetVersion()`** — expose the FMOD Core library version string for diagnostic output
+- [x] **FMOD error propagation** — all FMOD-level failures now return `false, errorCode, errorString`; `fmodGetLastError()` available at any time
+- [x] **`fmodGetVersion()`** — returns the FMOD Core library version string (e.g. `"2.02.21"`)
+- [x] **`fmodGetLastError()`** — standalone query: `errorCode, errorString` from the last FMOD operation
 
 ---
 

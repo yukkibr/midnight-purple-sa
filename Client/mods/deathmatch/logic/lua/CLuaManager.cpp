@@ -249,6 +249,7 @@ void CLuaManager::LoadCFunctions()
 
     // Luadef definitions
     CLuaAudioDefs::LoadFunctions();
+    CLuaFMODDefs::LoadFunctions();
     CLuaBlipDefs::LoadFunctions();
     CLuaBrowserDefs::LoadFunctions();
     CLuaCameraDefs::LoadFunctions();

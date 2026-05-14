@@ -11,7 +11,9 @@
 
 #include "StdInc.h"
 #include <game/CGame.h>
+#include <game/CCamera.h>
 #include <game/CSettings.h>
+#include <CMatrix.h>
 #include <Accctrl.h>
 #include <Aclapi.h>
 #include <filesystem>
@@ -182,6 +184,9 @@ CCore::CCore()
 
     // Create discord rich presence
     m_pDiscordRichPresence = std::shared_ptr<CDiscordRichPresence>(new CDiscordRichPresence());
+
+    // Initialize FMOD audio engine (coexists with BASS; BASS handles legacy Lua scripts)
+    m_pFMODManager = std::make_unique<CFMODManager>();
 }
 
 CCore::~CCore()
@@ -1457,7 +1462,110 @@ void CCore::DoPostFramePulse()
         }
     }
 
+    // Tick FMOD: sync 3D listener to camera and process audio events
+    if (m_pFMODManager && m_pFMODManager->IsInitialized() && m_pGame)
+    {
+        CCamera* pCamera = m_pGame->GetCamera();
+        if (pCamera)
+        {
+            CMatrix camMatrix;
+            pCamera->GetMatrix(&camMatrix);
+            m_pFMODManager->Update(camMatrix.vPos, camMatrix.vFront, camMatrix.vUp);
+        }
+    }
+
     TIMING_CHECKPOINT("-CorePostFrame2");
+}
+
+// FMOD CCoreInterface overrides — delegate to CFMODManager
+uint32_t CCore::FMODCreateSound(const char* path, bool b3D, bool bLoop)
+{
+    return m_pFMODManager ? m_pFMODManager->CreateSound(path, b3D, bLoop) : 0;
+}
+
+void CCore::FMODFreeSound(uint32_t soundId)
+{
+    if (m_pFMODManager)
+        m_pFMODManager->FreeSound(soundId);
+}
+
+uint32_t CCore::FMODPlaySound(uint32_t soundId, float x, float y, float z, float minDist, float maxDist)
+{
+    return m_pFMODManager ? m_pFMODManager->PlaySound(soundId, x, y, z, minDist, maxDist) : 0;
+}
+
+bool CCore::FMODStopChannel(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->StopChannel(channelId);
+}
+
+bool CCore::FMODSetChannelVolume(uint32_t channelId, float volume)
+{
+    return m_pFMODManager && m_pFMODManager->SetChannelVolume(channelId, volume);
+}
+
+bool CCore::FMODSetChannelPitch(uint32_t channelId, float pitch)
+{
+    return m_pFMODManager && m_pFMODManager->SetChannelPitch(channelId, pitch);
+}
+
+bool CCore::FMODSetChannelPosition(uint32_t channelId, float x, float y, float z)
+{
+    return m_pFMODManager && m_pFMODManager->SetChannelPosition(channelId, x, y, z);
+}
+
+bool CCore::FMODIsChannelPlaying(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->IsChannelPlaying(channelId);
+}
+
+void CCore::FMODSetReverbPreset(const char* presetName)
+{
+    if (m_pFMODManager)
+        m_pFMODManager->SetReverbPreset(presetName);
+}
+
+void CCore::FMODSetReverbWetLevel(float wetDB)
+{
+    if (m_pFMODManager)
+        m_pFMODManager->SetReverbWetLevel(wetDB);
+}
+
+bool CCore::FMODSetChannelReverbWet(uint32_t channelId, float wetDB)
+{
+    return m_pFMODManager && m_pFMODManager->SetChannelReverbWet(channelId, wetDB);
+}
+
+void CCore::FMODSetMasterVolume(float volume)
+{
+    if (m_pFMODManager)
+        m_pFMODManager->SetMasterVolume(volume);
+}
+
+float CCore::FMODGetMasterVolume() const
+{
+    return m_pFMODManager ? m_pFMODManager->GetMasterVolume() : 0.0f;
+}
+
+void CCore::FMODSetParameter(const char* name, float value)
+{
+    if (m_pFMODManager)
+        m_pFMODManager->SetParameter(name, value);
+}
+
+float CCore::FMODGetParameter(const char* name, float defaultValue)
+{
+    return m_pFMODManager ? m_pFMODManager->GetParameter(name, defaultValue) : defaultValue;
+}
+
+bool CCore::FMODApplyChannelEcho(uint32_t channelId, float delayMS, float feedbackPct, float wetDB)
+{
+    return m_pFMODManager && m_pFMODManager->ApplyChannelEcho(channelId, delayMS, feedbackPct, wetDB);
+}
+
+bool CCore::FMODRemoveChannelEcho(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->RemoveChannelEcho(channelId);
 }
 
 // Called after MOD is unloaded

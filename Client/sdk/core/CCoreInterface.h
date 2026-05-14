@@ -191,6 +191,33 @@ public:
     virtual void           SetLastConnectedServerName(const SString& strServerName) = 0;
 
     virtual void OnPostColorFilterRender() = 0;
+
+    // FMOD audio engine — handle-based API (no FMOD headers needed by callers)
+    virtual uint32_t FMODCreateSound(const char* path, bool b3D, bool bLoop = false) = 0;
+    virtual void     FMODFreeSound(uint32_t soundId) = 0;
+    virtual uint32_t FMODPlaySound(uint32_t soundId, float x, float y, float z, float minDist, float maxDist) = 0;
+    virtual bool     FMODStopChannel(uint32_t channelId) = 0;
+    virtual bool     FMODSetChannelVolume(uint32_t channelId, float volume) = 0;
+    virtual bool     FMODSetChannelPitch(uint32_t channelId, float pitch) = 0;
+    virtual bool     FMODSetChannelPosition(uint32_t channelId, float x, float y, float z) = 0;
+    virtual bool     FMODIsChannelPlaying(uint32_t channelId) = 0;
+
+    // Reverb environment (slot 0)
+    virtual void     FMODSetReverbPreset(const char* presetName) = 0;
+    virtual void     FMODSetReverbWetLevel(float wetDB) = 0;
+    virtual bool     FMODSetChannelReverbWet(uint32_t channelId, float wetDB) = 0;
+
+    // Master volume for all FMOD sounds (0.0 – 1.0)
+    virtual void     FMODSetMasterVolume(float volume) = 0;
+    virtual float    FMODGetMasterVolume() const = 0;
+
+    // Echo DSP — per-channel bouncing echo (delay, feedback, wet level)
+    virtual bool     FMODApplyChannelEcho(uint32_t channelId, float delayMS, float feedbackPct, float wetDB) = 0;
+    virtual bool     FMODRemoveChannelEcho(uint32_t channelId) = 0;
+
+    // Named parameter store (drives the Lua ambience system)
+    virtual void     FMODSetParameter(const char* name, float value) = 0;
+    virtual float    FMODGetParameter(const char* name, float defaultValue) = 0;
 };
 
 class CClientTime

@@ -42,6 +42,7 @@ class CDiscordInterface;
 #include <core/CWebCoreInterface.h>
 #include "CTrayIcon.h"
 #include "FPSLimiter.h"
+#include "CFMODManager.h"
 
 #define DIRECTINPUT_VERSION 0x0800
 #include <dinput.h>
@@ -110,6 +111,7 @@ public:
     std::shared_ptr<CDiscordInterface> GetDiscord();
     CSteamClient*                      GetSteamClient() { return m_steamClient.get(); }
     FPSLimiter::FPSLimiterInterface*   GetFPSLimiter() const noexcept { return m_pFPSLimiter.get(); }
+    CFMODManager*                      GetFMODManager() const noexcept { return m_pFMODManager.get(); }
 
     void SaveConfig(bool bWaitUntilFinished = false);
 
@@ -299,6 +301,25 @@ public:
 
     void OnPostColorFilterRender() override;
 
+    // FMOD audio engine — CCoreInterface overrides
+    uint32_t FMODCreateSound(const char* path, bool b3D, bool bLoop = false) override;
+    void     FMODFreeSound(uint32_t soundId) override;
+    uint32_t FMODPlaySound(uint32_t soundId, float x, float y, float z, float minDist, float maxDist) override;
+    bool     FMODStopChannel(uint32_t channelId) override;
+    bool     FMODSetChannelVolume(uint32_t channelId, float volume) override;
+    bool     FMODSetChannelPitch(uint32_t channelId, float pitch) override;
+    bool     FMODSetChannelPosition(uint32_t channelId, float x, float y, float z) override;
+    bool     FMODIsChannelPlaying(uint32_t channelId) override;
+    void     FMODSetReverbPreset(const char* presetName) override;
+    void     FMODSetReverbWetLevel(float wetDB) override;
+    bool     FMODSetChannelReverbWet(uint32_t channelId, float wetDB) override;
+    void     FMODSetMasterVolume(float volume) override;
+    float    FMODGetMasterVolume() const override;
+    bool     FMODApplyChannelEcho(uint32_t channelId, float delayMS, float feedbackPct, float wetDB) override;
+    bool     FMODRemoveChannelEcho(uint32_t channelId) override;
+    void     FMODSetParameter(const char* name, float value) override;
+    float    FMODGetParameter(const char* name, float defaultValue) override;
+
 private:
     void ApplyCoreInitSettings();
 
@@ -320,6 +341,7 @@ private:
     std::unique_ptr<CSteamClient>           m_steamClient;
     std::shared_ptr<CDiscordRichPresence>   m_pDiscordRichPresence;
     std::unique_ptr<FPSLimiter::FPSLimiter> m_pFPSLimiter;
+    std::unique_ptr<CFMODManager>           m_pFMODManager;
 
     // Hook interfaces.
     CMessageLoopHook*        m_pMessageLoopHook;

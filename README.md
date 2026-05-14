@@ -1,129 +1,203 @@
-## Multi Theft Auto: San Andreas
+# Midnight Purple: San Andreas
 
-[![Build Status](https://github.com/multitheftauto/mtasa-blue/workflows/Build/badge.svg?event=push&branch=master)](https://github.com/multitheftauto/mtasa-blue/actions?query=branch%3Amaster+event%3Apush) [![Unique servers online](https://img.shields.io/endpoint?url=https%3A%2F%2Fmultitheftauto.com%2Fapi%2Fservers-shields.io.json)](https://community.multitheftauto.com/index.php?p=servers) [![Unique players online](https://img.shields.io/endpoint?url=https%3A%2F%2Fmultitheftauto.com%2Fapi%2Fplayers-shields.io.json)](https://multitheftauto.com) [![Unique players last 24 hours](https://img.shields.io/endpoint?url=https%3A%2F%2Fmultitheftauto.com%2Fapi%2Funique-players-shields.io.json)](https://multitheftauto.com) [![Discord](https://img.shields.io/discord/278474088903606273?label=discord&logo=discord)](https://discord.com/invite/mtasa) [![Crowdin](https://badges.crowdin.net/e/f5dba7b9aa6594139af737c85d81d3aa/localized.svg)](https://multitheftauto.crowdin.com/multitheftauto)
+> **This is an independent fork of [Multi Theft Auto: San Andreas](https://github.com/multitheftauto/mtasa-blue).**
+> Midnight Purple:SA is **not** affiliated with, endorsed by, or supported by the Multi Theft Auto development team. Issues, pull requests, and questions about this fork should be directed here — **do not** contact the MTA team about Midnight Purple-specific changes.
 
-[Multi Theft Auto](https://www.multitheftauto.com/) (MTA) is a software project that adds network play functionality to Rockstar North's Grand Theft Auto game series, in which this functionality is not originally found. It is a unique modification that incorporates an extendable network play element into a proprietary commercial single-player PC game.
+---
 
-## Introduction
+Midnight Purple:SA is a custom MTA:SA client that extends the original multiplayer platform with a second audio engine (FMOD) running alongside the existing BASS stack. The goal is to enable advanced 3D audio, environmental effects, and engine sound simulation in Lua scripts — without breaking any existing script that already uses MTA's native audio functions.
 
-Multi Theft Auto is based on code injection and hooking techniques whereby the game is manipulated without altering any original files supplied with the game. The software functions as a game engine that installs itself as an extension of the original game, adding core functionality such as networking and GUI rendering while exposing the original game's engine functionality through a scripting language.
+**BASS remains untouched.** All existing `playSound`, `playSound3D`, `setSoundVolume`, etc. functions continue to work exactly as before. FMOD is an additive, parallel system exposed through its own set of `fmod*` Lua globals.
 
-Originally founded back in early 2003 as an experimental piece of C/C++ software, Multi Theft Auto has since grown into an advanced multiplayer platform for gamers and third-party developers. Our software provides a minimal sandbox style gameplay that can be extended through the Lua scripting language in many ways, allowing servers to run custom created game modes with custom content for up to hundreds of online players.
+---
 
-Formerly a closed-source project, we have migrated to open-source to encourage other developers to contribute as well as showing insight into our project's source code and design for educational reasons.
+## What's New in This Fork
 
-Multi Theft Auto is built upon the "Blue" concept that implements a game engine framework. Since the class design of our game framework is based upon Grand Theft Auto's design, we are able to insert our code into the original game. The game is then heavily extended by providing new game functionality (including tweaks and crash fixes) as well as a completely new graphical interface, networking and scripting component.
+### FMOD Audio Engine Integration
 
-## Gameplay content
+A new `CFMODManager` (`Client/core/`) wraps the FMOD Core API and is owned by `CCore`. It is updated every frame from `DoPostFramePulse()`, keeping the 3D listener position and orientation in sync with the game camera.
 
-By default, Multi Theft Auto provides the minimal sandbox style gameplay of Grand Theft Auto. The gameplay can be heavily extended through the use of the Lua scripting language that has been embedded in the client and server software. Both the server hosting the game, as well as the client playing the game are capable of running and synchronizing Lua scripts. These scripts are layered on top of Multi Theft Auto's game framework that consists of many classes and functions so that the game can be adjusted in virtually any possible way.
+**Engine internals:**
+- FMOD initialised in right-handed coordinate mode to match GTA:SA's world axes (Z up, Y north).
+- All FMOD sounds route through a master `ChannelGroup` for global volume control independent of BASS.
+- Automatic channel cleanup every frame — finished channels are purged from the internal map without manual book-keeping from scripts.
+- Sounds start paused, 3D attributes are applied, then unpaused — preventing a single-frame positional pop on spawn.
 
-All gameplay content such as Lua scripts, images, sounds, custom models or textures is grouped into a "resource". This resource is nothing more than an archive (containing the content) and a metadata file describing the content and any extra information (such as dependencies on other resources).
+### New Lua API (`fmod*` globals)
 
-Using a framework based on resources has a number of advantages. It allows content to be easily transferred to clients and servers. Another advantage is that we can provide a way to import and export scripting functionality in a resource. For example, different resources can import (often basic) functionality from one or more common resources. These will then be automatically downloaded and started. Another feature worth mentioning is that server administrators can control the access to specific resources by assigning a number of different user rights to them.
+All functions are available client-side. Sound and channel IDs are plain integers managed by `CFMODManager`.
 
-## Development
+**Sound lifetime**
 
-Our project's code repository can be found on the [multitheftauto/mtasa-blue](https://github.com/multitheftauto/mtasa-blue/) Git repository at [GitHub](https://github.com/). We are always looking for new developers, so if you're interested, here are some useful links:
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `fmodCreateSound(path, [is3D=false], [loop=false])` | soundId / `false` | Load a sound asset from a resource path. |
+| `fmodFreeSound(soundId)` | bool | Release the sound and free its memory. |
 
-* [Contributors Guide and Coding Guidelines](https://github.com/multitheftauto/mtasa-docs/blob/main/mtasa-blue/CONTRIBUTING.md)
-* [Nightly Builds](https://nightly.multitheftauto.com/)
-* [Milestones](https://github.com/multitheftauto/mtasa-blue/milestones)
+**Playback**
 
-### Build Instructions
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `fmodPlaySound(soundId, [x, y, z, [minDist=1, maxDist=100]])` | channelId / `false` | Spawn a playing instance of a sound. |
+| `fmodStopSound(channelId)` | bool | Stop and remove the channel. |
+| `fmodIsSoundPlaying(channelId)` | bool | Check whether a channel is still active. |
 
-#### Windows
+**Per-channel control**
 
-Prerequisites
-- [Visual Studio 2026](https://visualstudio.microsoft.com/vs/) with:
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `fmodSetSoundVolume(channelId, volume)` | bool | Volume 0.0 – 1.0. |
+| `fmodSetSoundPitch(channelId, pitch)` | bool | 1.0 = normal, 2.0 = one octave up. |
+| `fmodSetSoundPosition(channelId, x, y, z)` | bool | Update world position for a 3D channel. |
+
+**Environmental reverb** (global slot 0; opt-in per channel)
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `fmodSetReverbPreset(preset)` | bool | Set the global reverb character. Presets: `"off"`, `"generic"`, `"room"`, `"bathroom"`, `"cave"`, `"city"`, `"alley"`, `"forest"`, `"mountains"`, `"plain"`, `"sewerpipe"`, `"underwater"`, `"stonecorridor"`, `"hallway"`, `"stoneroom"`, `"auditorium"`, `"concerthall"`, `"arena"`, `"hangar"`, `"parkinglot"`, `"paddedcell"`, `"livingroom"`, `"quarry"`. |
+| `fmodSetReverbWetLevel(wetDB)` | bool | Override the output level (-80 to +20 dB) without changing the preset's character. |
+| `fmodSetChannelReverb(channelId, wetDB)` | bool | Connect a channel to the reverb bus. Channels are **dry by default**; call this to opt in. |
+
+**Echo DSP** (per-channel)
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `fmodSetChannelEcho(channelId, delayMS, feedbackPct, wetDB)` | bool | Attach or update an echo effect on a channel. |
+| `fmodRemoveChannelEcho(channelId)` | bool | Remove the echo DSP from a channel. |
+
+**Master volume**
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `fmodSetMasterVolume(volume)` | bool | Scale all FMOD sounds together (0.0 – 1.0, default 0.5). |
+| `fmodGetMasterVolume()` | number | Read the current FMOD master volume. |
+
+**Named float parameters** (ambience system)
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `fmodSetParameter(name, value)` | bool | Store a named float for use by the ambience scripting layer. |
+| `fmodGetParameter(name [, default=0])` | number | Read back a stored parameter. |
+
+---
+
+## Roadmap
+
+The items below represent what is needed to consider the FMOD integration feature-complete.
+
+### Core audio features
+- [ ] **Doppler effect** — pass per-channel velocity to `set3DAttributes` so moving sources shift pitch relative to the listener
+- [ ] **Pause / resume** — `fmodPauseSound(channelId)` / `fmodResumeSound(channelId)`
+- [ ] **Streaming audio** — create sounds via `FMOD_CREATESTREAM` for long music tracks, avoiding full decode into RAM
+- [ ] **Loop state toggle** — `fmodSetSoundLooped` / `fmodGetSoundLooped` to change loop mode after creation
+- [ ] **Read-back functions** — `fmodGetSoundPosition`, `fmodGetSoundVolume`, `fmodGetSoundPitch`
+
+### DSP / effects
+- [ ] **Additional DSP types** — low-pass / high-pass filter, distortion, flanger, chorus exposed as Lua functions
+- [ ] **DSP chain query** — `fmodGetChannelEffects()` to list active DSPs on a channel
+
+### Architecture & scripting
+- [ ] **Per-resource sound tracking** — sounds should be automatically freed when the resource that created them stops, matching how MTA handles BASS sounds
+- [ ] **Volume categories** — separate master volumes for SFX, ambient, and music channels (`fmodSetCategoryVolume`)
+- [ ] **Server-triggered playback** — server Lua instructs clients to play a positioned FMOD sound, syncing audio events across players
+- [ ] **Occlusion / obstruction** — geometry-aware audio muffling when solid objects are between a sound source and the listener (FMOD Geometry API)
+
+### Vehicle engine sounds (primary motivator)
+- [ ] **Engine sound layer** — a dedicated `CEngineAudioController` that drives FMOD channel pitch and volume from vehicle RPM and speed each frame
+- [ ] **Per-vehicle sound bank** — assign custom sound assets to vehicle models via Lua (`fmodSetVehicleEngineSound(vehicleModel, soundId)`)
+- [ ] **Rev limiter / gear shift events** — fire one-shot FMOD sounds on gear change and rev limiter hit
+- [ ] **Exhaust 3D positioning** — bind the engine sound source to the vehicle's exhaust bone position instead of the vehicle origin
+
+### Quality of life
+- [ ] **FMOD error propagation** — surface `FMOD_RESULT` codes back to Lua (`false, errorCode, errorString`) instead of plain `false`
+- [ ] **`fmodGetVersion()`** — expose the FMOD Core library version string for diagnostic output
+
+---
+
+## Original MTA:SA — Build Instructions
+
+The sections below are preserved from the upstream project so that contributors can build the full client and server from source.
+
+### Windows
+
+**Prerequisites**
+- [Visual Studio 2022](https://visualstudio.microsoft.com/vs/) with:
   - Desktop development with C++
-  - Optional component *C++ MFC for latest v145 build tools (x86 & x64)* or if that's missing *C++ MFC for x64/x86 (Latest MSVC)*
-- [Microsoft DirectX SDK](https://wiki.multitheftauto.com/wiki/Compiling_MTASA#Microsoft_DirectX_SDK)
-- [Git for Windows](https://git-scm.com/download/win) (Optional)
+  - Optional component *C++ MFC for latest v145 build tools (x86 & x64)*
+- [Microsoft DirectX SDK June 2010](https://wiki.multitheftauto.com/wiki/Compiling_MTASA#Microsoft_DirectX_SDK)
+- [Git for Windows](https://git-scm.com/download/win) (optional)
 
-1. Execute `win-create-projects.bat`
-2. Open `MTASA.sln` in the `Build` directory
-3. Compile
-4. Execute: `win-install-data.bat`
+**Additional requirement for this fork**
+- FMOD Core SDK (x86) installed to `vendor\fmod\` (`vendor\fmod\inc\` and `vendor\fmod\lib\x86\`)
 
-Visit the wiki article ["Compiling MTASA"](https://wiki.multitheftauto.com/wiki/Compiling_MTASA) for additional information and error troubleshooting.
+**Steps**
 
-#### GNU/Linux
+1. Run `win-create-projects.bat` to generate the Visual Studio solution.
+2. Open `Build\MTASA.sln`.
+3. Compile (target: **Win32 / Release**).
+4. Run `win-install-data.bat` to copy runtime data.
 
-You can build the MTA:SA server on GNU/Linux distributions only for x86, x86_64, armhf and arm64 CPU architectures. ARM architectures are currently in **experimental phase**, which means they're unstable, untested and may crash randomly. Beware that we only officially support building from x86_64 and that includes cross-compiling for x86, arm and arm64.
+To build from the command line:
 
-**Build dependencies**
-
-*Please always read the utils/docker/Dockerfile for up-to-date build dependencies.*
-
-- make
-- GNU GCC compiler (version 10 or newer)
-- libncurses-dev
-- libmysqlclient-dev
-
-**Build instructions: Script**
-
-**Note:** This script always deletes `Build/` and `Bin/` directories and does a clean build.
-
-```sh
-$ ./linux-build.sh [--arch=x86|x64|arm|arm64] [--config=debug|release] [--cores=<n>]
-$ ./linux-install-data.sh  # optional step
+```bat
+win-build.bat [Debug|Release] [Win32|x64]
 ```
 
-If build architecture `--arch` is not provided, then it's taken from the environment variable `BUILD_ARCHITECTURE` (defaults to: x64).
+Visit the wiki article [Compiling MTASA](https://wiki.multitheftauto.com/wiki/Compiling_MTASA) for additional error troubleshooting.
 
-If build configuration `--config` is not provided, then it's taken from the environment variable `BUILD_CONFIG` (defaults to: release).
+> **Maetro build** (Windows 7 / 8 / 8.1 compatibility):
+> ```powershell
+> $env:MTA_MAETRO='true'; .\win-create-projects.bat; $env:MTA_MAETRO=$null
+> ```
 
-If the number of jobs `--cores` is not provided, then the build will default to the amount of CPU cores.
+### GNU/Linux (server only)
 
-If you are trying to **cross-compile** to another architecture, then set `AR`, `CC`, `CXX`, `GCC_PREFIX` environment variables accordingly (see `utils/docker/Dockerfile` for an example).
+Supported architectures: x86, x86_64, armhf, arm64 (ARM is experimental).
 
-**Build instructions: Manual**
-
-```sh
-$ ./utils/premake5 gmake
-$ make -C Build/ config=release_x64 all
-$ ./linux-install-data.sh  # optional step
-```
-
-If you don't want to build the release configuration for the x86_64 architecture, you can instead pick another build configuration from: `{debug|release}_{x86|x64|arm|arm64}`.
-
-#### GNU/Linux: Docker Build Environment
-
-If you have problems resolving the required dependencies or want maximum compatibility, you can use our dockerized build environment that ships all needed dependencies. We also use this environment to build the official binaries.
-
-**Pulling the Docker image**
+**Script build**
 
 ```sh
-$ docker pull ghcr.io/multitheftauto/mtasa-blue-build:latest
+./linux-build.sh [--arch=x86|x64|arm|arm64] [--config=debug|release] [--cores=<n>]
+./linux-install-data.sh   # optional
 ```
 
-**Building with Docker**
+**Manual build**
 
-These examples assume that your current directory is the mtasa-blue checkout directory. You should also know that `/build` is the code directory required by our Docker image inside the container. After compiling, you will find the resulting binaries in `./Bin`. To build the unoptimised debug build, add `--config=debug` to the docker run arguments.
+```sh
+./utils/premake5 gmake
+make -C Build/ config=release_x64 all
+```
+
+**Docker build**
 
 ```sh
 # x86_64
 docker run --rm -v `pwd`:/build ghcr.io/multitheftauto/mtasa-blue-build:latest --arch=x64
-
-# x86
-docker run --rm -v `pwd`:/build ghcr.io/multitheftauto/mtasa-blue-build:latest --arch=x86
-
-# arm
-docker run --rm -v `pwd`:/build ghcr.io/multitheftauto/mtasa-blue-build:latest --arch=arm
-
-# arm64
-docker run --rm -v `pwd`:/build ghcr.io/multitheftauto/mtasa-blue-build:latest --arch=arm64
 ```
 
-### Premake FAQ
+See `utils/docker/Dockerfile` for up-to-date build dependencies.
 
-#### How to add new C++ source files?
+### Adding new source files (Windows)
 
-Execute `win-create-projects.bat`
+Re-run `win-create-projects.bat` after adding or removing `.cpp` / `.h` files. Premake regenerates the solution from `premake5.lua`; editing `.vcxproj` files directly is not supported.
+
+---
+
+## Code Formatting
+
+Run after any C++ change (requires PowerShell 7+):
+
+```powershell
+./utils/clang-format.ps1
+```
+
+This downloads a pinned clang-format binary and formats all `.c/.cpp/.h` files under `Client/`, `Server/`, `Shared/`, and `Tests/`. CI enforces this on Linux; format locally before pushing.
+
+---
 
 ## License
 
 Unless otherwise specified, all source code hosted on this repository is licensed under the GPLv3 license. See the [LICENSE](./LICENSE) file for more details.
 
-Grand Theft Auto and all related trademarks are © Rockstar North 1997–2026.
+Grand Theft Auto and all related trademarks are © Rockstar North 1997–2026.  
+Multi Theft Auto is © the Multi Theft Auto team. This fork is an independent project and carries no warranty or support from them.

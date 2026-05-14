@@ -19,9 +19,10 @@ A new `CFMODManager` (`Client/core/`) wraps the FMOD Core API and is owned by `C
 
 **Engine internals:**
 - FMOD initialised in right-handed coordinate mode to match GTA:SA's world axes (Z up, Y north).
-- All FMOD sounds route through a master `ChannelGroup` for global volume control independent of BASS.
+- All FMOD sounds route through a master `ChannelGroup`. Three sub-groups sit under it — **SFX** (default), **Ambient**, and **Music** — each with an independent volume scalar.
 - Automatic channel cleanup every frame — finished channels are purged from the internal map without manual book-keeping from scripts.
 - Sounds start paused, 3D attributes are applied, then unpaused — preventing a single-frame positional pop on spawn.
+- **Per-resource tracking** — every sound ID is registered against the `CLuaMain` that created it. When a resource stops, all its FMOD sounds are automatically freed, matching how MTA handles BASS sounds.
 
 ### New Lua API (`fmod*` globals)
 
@@ -40,32 +41,61 @@ All functions are available client-side. Sound and channel IDs are plain integer
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `fmodPlaySound(soundId, [x, y, z, [minDist=1, maxDist=100]])` | channelId / `false` | Spawn a playing instance of a sound. |
+| `fmodPlaySound(soundId, [x, y, z, [minDist=1, maxDist=100]])` | channelId / `false` | Spawn a playing instance of a sound. Omit position for a 2D (non-spatialized) channel. |
 | `fmodStopSound(channelId)` | bool | Stop and remove the channel. |
-| `fmodIsSoundPlaying(channelId)` | bool | Check whether a channel is still active. |
+| `fmodPauseSound(channelId)` | bool | Pause a channel without removing it. |
+| `fmodResumeSound(channelId)` | bool | Resume a paused channel. |
+| `fmodIsSoundPaused(channelId)` | bool | Returns `true` if the channel is paused. |
+| `fmodIsSoundPlaying(channelId)` | bool | Returns `true` if the channel is still active and not paused. |
 
 **Per-channel control**
 
 | Function | Returns | Description |
 |----------|---------|-------------|
 | `fmodSetSoundVolume(channelId, volume)` | bool | Volume 0.0 – 1.0. |
+| `fmodGetSoundVolume(channelId)` | number | Read the current volume. |
 | `fmodSetSoundPitch(channelId, pitch)` | bool | 1.0 = normal, 2.0 = one octave up. |
+| `fmodGetSoundPitch(channelId)` | number | Read the current pitch multiplier. |
 | `fmodSetSoundPosition(channelId, x, y, z)` | bool | Update world position for a 3D channel. |
+| `fmodGetSoundPosition(channelId)` | x, y, z | Read the current world position. Returns `false` on a 2D channel. |
+| `fmodSetSoundVelocity(channelId, vx, vy, vz)` | bool | Set world-space velocity for Doppler pitch shift. |
+| `fmodSetSoundLooped(channelId, loop)` | bool | Change loop mode on a live channel without restarting it. |
+| `fmodGetSoundLooped(channelId)` | bool | Read the current loop state. |
 
 **Environmental reverb** (global slot 0; opt-in per channel)
 
 | Function | Returns | Description |
 |----------|---------|-------------|
 | `fmodSetReverbPreset(preset)` | bool | Set the global reverb character. Presets: `"off"`, `"generic"`, `"room"`, `"bathroom"`, `"cave"`, `"city"`, `"alley"`, `"forest"`, `"mountains"`, `"plain"`, `"sewerpipe"`, `"underwater"`, `"stonecorridor"`, `"hallway"`, `"stoneroom"`, `"auditorium"`, `"concerthall"`, `"arena"`, `"hangar"`, `"parkinglot"`, `"paddedcell"`, `"livingroom"`, `"quarry"`. |
-| `fmodSetReverbWetLevel(wetDB)` | bool | Override the output level (-80 to +20 dB) without changing the preset's character. |
-| `fmodSetChannelReverb(channelId, wetDB)` | bool | Connect a channel to the reverb bus. Channels are **dry by default**; call this to opt in. |
+| `fmodSetReverbWetLevel(wetDB)` | bool | Override the output level (−80 to +20 dB) without changing the preset character. |
+| `fmodSetChannelReverb(channelId, wetDB)` | bool | Connect a channel to the reverb bus. Channels are **dry by default**; call this to opt in. Negative dB values are linear-converted internally. |
 
-**Echo DSP** (per-channel)
+**DSP effects** (per-channel; each type occupies one slot; calling Set again updates parameters in-place without recreating the DSP)
 
 | Function | Returns | Description |
 |----------|---------|-------------|
-| `fmodSetChannelEcho(channelId, delayMS, feedbackPct, wetDB)` | bool | Attach or update an echo effect on a channel. |
-| `fmodRemoveChannelEcho(channelId)` | bool | Remove the echo DSP from a channel. |
+| `fmodSetChannelEcho(channelId, delayMS, feedbackPct, wetDB)` | bool | Attach or update an echo/delay effect. |
+| `fmodRemoveChannelEcho(channelId)` | bool | Remove the echo DSP. |
+| `fmodSetChannelLowPass(channelId, cutoffHz, [resonance=1.0])` | bool | Attenuate frequencies above `cutoffHz`. Useful for distance muffle or interior filtering. |
+| `fmodRemoveChannelLowPass(channelId)` | bool | Remove the low-pass filter. |
+| `fmodSetChannelHighPass(channelId, cutoffHz, [resonance=1.0])` | bool | Attenuate frequencies below `cutoffHz`. |
+| `fmodRemoveChannelHighPass(channelId)` | bool | Remove the high-pass filter. |
+| `fmodSetChannelFlanger(channelId, mix, depth, rate)` | bool | Cyclic phase-modulation effect. `mix` 0–100 %, `depth` 0.01–1.0, `rate` 0–20 Hz. |
+| `fmodRemoveChannelFlanger(channelId)` | bool | Remove the flanger DSP. |
+| `fmodSetChannelChorus(channelId, mix, depth, rate)` | bool | Pitch-varied doubling effect. `mix` 0–100 %, `depth` 0–100 %, `rate` 0–20 Hz. |
+| `fmodRemoveChannelChorus(channelId)` | bool | Remove the chorus DSP. |
+| `fmodSetChannelDistortion(channelId, level)` | bool | Hard-clipping saturation. `level` 0.0 (clean) – 1.0 (full clip). |
+| `fmodRemoveChannelDistortion(channelId)` | bool | Remove the distortion DSP. |
+
+**Volume categories**
+
+Channels belong to one of three sub-groups under the master group. Category volume and master volume multiply together.
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `fmodSetChannelCategory(channelId, category)` | bool | Move a live channel to a category. `category` accepts `"sfx"`, `"ambient"`, `"music"` or integers `0`, `1`, `2`. Default is `"sfx"`. |
+| `fmodSetCategoryVolume(category, volume)` | bool | Scale all channels in a category (0.0 – 1.0). Accepts string or integer. |
+| `fmodGetCategoryVolume(category)` | number | Read the current category volume scalar. |
 
 **Master volume**
 
@@ -73,6 +103,13 @@ All functions are available client-side. Sound and channel IDs are plain integer
 |----------|---------|-------------|
 | `fmodSetMasterVolume(volume)` | bool | Scale all FMOD sounds together (0.0 – 1.0, default 0.5). |
 | `fmodGetMasterVolume()` | number | Read the current FMOD master volume. |
+
+**Diagnostics**
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `fmodGetVersion()` | string | FMOD Core library version (e.g. `"2.02.21"`). |
+| `fmodGetLastError()` | errorCode, errorString | Read the last FMOD result code and its human-readable description. |
 
 **Named float parameters** (ambience system)
 
@@ -85,35 +122,36 @@ All functions are available client-side. Sound and channel IDs are plain integer
 
 ## Roadmap
 
-The items below represent what is needed to consider the FMOD integration feature-complete.
-
 ### Core audio features
 - [x] **Doppler effect** — `fmodSetSoundVelocity(ch, vx, vy, vz)` feeds velocity to `set3DAttributes`; FMOD computes pitch shift automatically
-- [x] **Pause / resume** — `fmodPauseSound(ch)` / `fmodResumeSound(ch)` / `fmodIsSoundPaused(ch)`
-- [x] **Streaming audio** — `fmodCreateStream(path, [is3D], [loop])` uses `FMOD_CREATESTREAM`; identical API to `fmodCreateSound`
-- [x] **Loop state toggle** — `fmodSetSoundLooped(ch, bool)` / `fmodGetSoundLooped(ch)` — change loop mode on a live channel
-- [x] **Read-back functions** — `fmodGetSoundVolume(ch)`, `fmodGetSoundPitch(ch)`, `fmodGetSoundPosition(ch)` → x, y, z
+- [x] **Pause / resume** — `fmodPauseSound` / `fmodResumeSound` / `fmodIsSoundPaused`
+- [x] **Streaming audio** — `fmodCreateStream` uses `FMOD_CREATESTREAM`; identical API to `fmodCreateSound`
+- [x] **Loop state toggle** — `fmodSetSoundLooped` / `fmodGetSoundLooped` — change loop mode on a live channel without restarting
+- [x] **Read-back functions** — `fmodGetSoundVolume`, `fmodGetSoundPitch`, `fmodGetSoundPosition`, `fmodGetSoundLooped`
 
 ### DSP / effects
-- [ ] **Additional DSP types** — low-pass / high-pass filter, distortion, flanger, chorus exposed as Lua functions
+- [x] **Additional DSP types** — low-pass, high-pass, flanger, chorus, distortion, each exposed as `fmodSet/RemoveChannel*` pairs
 - [ ] **DSP chain query** — `fmodGetChannelEffects()` to list active DSPs on a channel
 
 ### Architecture & scripting
-- [ ] **Per-resource sound tracking** — sounds should be automatically freed when the resource that created them stops, matching how MTA handles BASS sounds
-- [ ] **Volume categories** — separate master volumes for SFX, ambient, and music channels (`fmodSetCategoryVolume`)
+- [x] **Per-resource sound tracking** — sounds are automatically freed when the resource that created them stops, matching MTA's BASS behaviour
+- [x] **Volume categories** — independent volume scalars for SFX, Ambient, and Music sub-groups via `fmodSetCategoryVolume` / `fmodGetCategoryVolume`
 - [ ] **Server-triggered playback** — server Lua instructs clients to play a positioned FMOD sound, syncing audio events across players
 - [ ] **Occlusion / obstruction** — geometry-aware audio muffling when solid objects are between a sound source and the listener (FMOD Geometry API)
 
 ### Vehicle engine sounds (primary motivator)
-- [x] **Engine sound layer** — `hikari_engine` resource fully migrated to FMOD: RPM-driven pitch/volume per channel, environmental reverb opt-in, smooth echo fade, Doppler effect
-- [x] **Per-vehicle sound bank** — `engine_table.lua` assigns sound packs per engine type; `fmodCreateSoundFromMemory` loads TEA-decrypted `.wavlocked` assets into FMOD
+- [x] **Engine sound layer** — `hikari_Engine` resource fully migrated to FMOD: RPM-driven pitch/volume per channel, environmental reverb opt-in, smooth echo fade, Doppler
+- [x] **Per-vehicle sound bank** — `engine_table.lua` assigns sound packs per engine type; `fmodCreateSoundFromMemory` loads TEA-decrypted `.wavlocked` assets
 - [x] **Rev limiter / gear shift events** — one-shot BOV and backfire/ALS sounds fire via FMOD with Doppler velocity
-- [ ] **Exhaust 3D positioning** — bind the engine sound source to the vehicle's exhaust bone position instead of the vehicle origin
+- [x] **Exhaust 3D positioning** — engine sound sources bind to the vehicle's exhaust bone (`exhaust_b` → `exhaust_a` → `exhaust` → vehicle origin fallback)
+- [x] **Tunnel echo & reverb** — independent raycast-based cover detection with hysteresis; looping channels fade reverb send proportional to `echoIntensity`; one-shot transients (backfire, BOV) receive both Echo DSP and reverb send for consistency
+- [x] **Air-absorption LPF** — non-local vehicles beyond 20 m receive a distance-proportional low-pass filter (20 kHz at 20 m → ~3.6 kHz at the audibility limit) simulating high-frequency atmospheric loss
+- [x] **Rev limiter distortion** — the high-RPM layer receives a brief `fmodSetChannelDistortion` while bouncing off the limiter, adding a metallic crunch character
 
 ### Quality of life
-- [x] **FMOD error propagation** — all FMOD-level failures now return `false, errorCode, errorString`; `fmodGetLastError()` available at any time
-- [x] **`fmodGetVersion()`** — returns the FMOD Core library version string (e.g. `"2.02.21"`)
-- [x] **`fmodGetLastError()`** — standalone query: `errorCode, errorString` from the last FMOD operation
+- [x] **FMOD error propagation** — all FMOD-level failures return `false, errorCode, errorString`; `fmodGetLastError()` available at any time
+- [x] **`fmodGetVersion()`** — returns the FMOD Core library version string
+- [x] **Version label** — in-game client label reads *Midnight Purple 1.7* instead of the upstream *MTA:SA 1.7-custom*
 
 ---
 

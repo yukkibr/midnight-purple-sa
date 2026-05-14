@@ -1625,6 +1625,59 @@ bool CCore::FMODRemoveChannelEcho(uint32_t channelId)
     return m_pFMODManager && m_pFMODManager->RemoveChannelEcho(channelId);
 }
 
+bool CCore::FMODApplyChannelLowPass(uint32_t channelId, float cutoffHz, float resonance)
+{
+    return m_pFMODManager && m_pFMODManager->ApplyChannelLowPass(channelId, cutoffHz, resonance);
+}
+bool CCore::FMODRemoveChannelLowPass(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->RemoveChannelLowPass(channelId);
+}
+bool CCore::FMODApplyChannelHighPass(uint32_t channelId, float cutoffHz, float resonance)
+{
+    return m_pFMODManager && m_pFMODManager->ApplyChannelHighPass(channelId, cutoffHz, resonance);
+}
+bool CCore::FMODRemoveChannelHighPass(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->RemoveChannelHighPass(channelId);
+}
+bool CCore::FMODApplyChannelFlanger(uint32_t channelId, float mix, float depth, float rate)
+{
+    return m_pFMODManager && m_pFMODManager->ApplyChannelFlanger(channelId, mix, depth, rate);
+}
+bool CCore::FMODRemoveChannelFlanger(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->RemoveChannelFlanger(channelId);
+}
+bool CCore::FMODApplyChannelChorus(uint32_t channelId, float mix, float depth, float rate)
+{
+    return m_pFMODManager && m_pFMODManager->ApplyChannelChorus(channelId, mix, depth, rate);
+}
+bool CCore::FMODRemoveChannelChorus(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->RemoveChannelChorus(channelId);
+}
+bool CCore::FMODApplyChannelDistortion(uint32_t channelId, float level)
+{
+    return m_pFMODManager && m_pFMODManager->ApplyChannelDistortion(channelId, level);
+}
+bool CCore::FMODRemoveChannelDistortion(uint32_t channelId)
+{
+    return m_pFMODManager && m_pFMODManager->RemoveChannelDistortion(channelId);
+}
+bool CCore::FMODSetChannelCategory(uint32_t channelId, int category)
+{
+    return m_pFMODManager && m_pFMODManager->SetChannelCategory(channelId, category);
+}
+bool CCore::FMODSetCategoryVolume(int category, float volume)
+{
+    return m_pFMODManager && m_pFMODManager->SetCategoryVolume(category, volume);
+}
+float CCore::FMODGetCategoryVolume(int category) const
+{
+    return m_pFMODManager ? m_pFMODManager->GetCategoryVolume(category) : 0.0f;
+}
+
 void CCore::FMODSetParameter(const char* name, float value)
 {
     if (m_pFMODManager)

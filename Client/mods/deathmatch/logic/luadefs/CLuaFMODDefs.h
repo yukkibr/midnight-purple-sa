@@ -8,11 +8,18 @@
 
 #pragma once
 #include "CLuaDefs.h"
+#include <unordered_map>
+#include <vector>
+
+class CLuaMain;
 
 class CLuaFMODDefs : public CLuaDefs
 {
 public:
     static void LoadFunctions();
+
+    // Called from CLuaManager::RemoveVirtualMachine — frees all sounds created by the resource
+    static void OnLuaMainRemoved(CLuaMain* pLuaMain);
 
     // Version / diagnostics
     LUA_DECLARE(FMODGetVersion);
@@ -54,6 +61,29 @@ public:
     LUA_DECLARE(FMODSetChannelEcho);
     LUA_DECLARE(FMODRemoveChannelEcho);
 
+    // Low-pass / high-pass filters
+    LUA_DECLARE(FMODSetChannelLowPass);
+    LUA_DECLARE(FMODRemoveChannelLowPass);
+    LUA_DECLARE(FMODSetChannelHighPass);
+    LUA_DECLARE(FMODRemoveChannelHighPass);
+
+    // Flanger DSP
+    LUA_DECLARE(FMODSetChannelFlanger);
+    LUA_DECLARE(FMODRemoveChannelFlanger);
+
+    // Chorus DSP
+    LUA_DECLARE(FMODSetChannelChorus);
+    LUA_DECLARE(FMODRemoveChannelChorus);
+
+    // Distortion DSP
+    LUA_DECLARE(FMODSetChannelDistortion);
+    LUA_DECLARE(FMODRemoveChannelDistortion);
+
+    // Volume categories (0=sfx, 1=ambient, 2=music)
+    LUA_DECLARE(FMODSetChannelCategory);
+    LUA_DECLARE(FMODSetCategoryVolume);
+    LUA_DECLARE(FMODGetCategoryVolume);
+
     // Master volume
     LUA_DECLARE(FMODSetMasterVolume);
     LUA_DECLARE(FMODGetMasterVolume);
@@ -61,4 +91,12 @@ public:
     // Named parameters (ambience system)
     LUA_DECLARE(FMODSetParameter);
     LUA_DECLARE(FMODGetParameter);
+
+private:
+    // Per-resource sound tracking: LuaMain* → list of sound IDs it created
+    static std::unordered_map<void*, std::vector<uint32_t>> s_resourceSounds;
+
+    static void TrackSound(lua_State* luaVM, uint32_t soundId);
+    static void UntrackSound(uint32_t soundId);
+    static int  StringToCategory(const SString& name);
 };

@@ -80,6 +80,7 @@ bool CLuaManager::RemoveVirtualMachine(CLuaMain* pLuaMain)
         // Delete it unless it is already
         if (!pLuaMain->BeingDeleted())
         {
+            CLuaFMODDefs::OnLuaMainRemoved(pLuaMain);
             delete pLuaMain;
         }
 

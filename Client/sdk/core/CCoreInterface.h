@@ -238,6 +238,29 @@ public:
     virtual bool     FMODApplyChannelEcho(uint32_t channelId, float delayMS, float feedbackPct, float wetDB) = 0;
     virtual bool     FMODRemoveChannelEcho(uint32_t channelId) = 0;
 
+    // Low-pass / high-pass filters (frequency in Hz, resonance Q 1–10)
+    virtual bool     FMODApplyChannelLowPass(uint32_t channelId, float cutoffHz, float resonance = 1.0f) = 0;
+    virtual bool     FMODRemoveChannelLowPass(uint32_t channelId) = 0;
+    virtual bool     FMODApplyChannelHighPass(uint32_t channelId, float cutoffHz, float resonance = 1.0f) = 0;
+    virtual bool     FMODRemoveChannelHighPass(uint32_t channelId) = 0;
+
+    // Flanger DSP (mix 0–100 %, depth 0.01–1.0, rate 0–20 Hz)
+    virtual bool     FMODApplyChannelFlanger(uint32_t channelId, float mix, float depth, float rate) = 0;
+    virtual bool     FMODRemoveChannelFlanger(uint32_t channelId) = 0;
+
+    // Chorus DSP (mix 0–100 %, depth 0–100 %, rate 0–20 Hz)
+    virtual bool     FMODApplyChannelChorus(uint32_t channelId, float mix, float depth, float rate) = 0;
+    virtual bool     FMODRemoveChannelChorus(uint32_t channelId) = 0;
+
+    // Distortion DSP (level 0.0–1.0)
+    virtual bool     FMODApplyChannelDistortion(uint32_t channelId, float level) = 0;
+    virtual bool     FMODRemoveChannelDistortion(uint32_t channelId) = 0;
+
+    // Volume categories — sub-groups under the master: 0=SFX, 1=Ambient, 2=Music
+    virtual bool     FMODSetChannelCategory(uint32_t channelId, int category) = 0;
+    virtual bool     FMODSetCategoryVolume(int category, float volume) = 0;
+    virtual float    FMODGetCategoryVolume(int category) const = 0;
+
     // Named parameter store (drives the Lua ambience system)
     virtual void     FMODSetParameter(const char* name, float value) = 0;
     virtual float    FMODGetParameter(const char* name, float defaultValue) = 0;

@@ -1,0 +1,22 @@
+Olá, Claude! Estou desenvolvendo um custom client do Multi Theft Auto (MTA:SA) chamado Midnight Purple:SA. É um fork do repositório oficial mtasa-blue (C++). O meu objetivo é integrar a API do FMOD na engine do cliente para termos recursos de áudio 3D avançados e simulação de motores, trabalhando lado a lado com a antiga BASS.dll original (sem substituí-la, para manter a retrocompatibilidade com scripts Lua antigos).
+
+O que já foi feito e configurado no ambiente hoje:
+
+Ambiente C++ e Build: O projeto está sendo compilado no Visual Studio 2022 (arquitetura x86/Win32) usando CMake. A compilação está sendo feita em modo Release para evitar dependências de módulos de debug fechados do MTA (como o netc_d.dll).
+
+Correção de Dependências: O erro do d3dx9.h foi resolvido instalando o DirectX SDK (June 2010). O erro de depreciação do stdext na biblioteca Crypto++ foi resolvido fazendo um downgrade do Platform Toolset especificamente desse projeto para o motor do Visual Studio 2019 (v142) - ISO C++14. O projeto agora compila com 100% de sucesso.
+
+Estrutura do FMOD: A FMOD (Engine x86) foi instalada em uma pasta local do projeto chamada vendor\fmod. O projeto ClientCore já está linkado com os Include Directories (/inc) e Library Directories (/lib/x86), e o linker já possui o fmod_vc.lib. A fmod.dll já está na pasta de execução Bin\mta.
+
+Ambiente de Teste (Servidor): O cliente customizado já consegue abrir e se conectar ao servidor local (127.0.0.1). Para evitar kicks do Anti-Cheat oficial (AC #95 HB-timeout), o servidor de testes foi configurado com a tag <enablesd> vazia e o <disableac> configurado para ignorar todas as checagens de modificação de cliente (1,2,4,5,8,11,12,14,15,16,17,21,22,26,31,32). O FPS do cliente está travado para não sufocar a thread de rede.
+
+Arquitetura do Código (Onde paramos e o que preciso de você):
+Precisamos começar a codificar a integração do FMOD no C++. O plano de ataque é o seguinte:
+
+Inicialização: Preciso instanciar o FMOD::System dentro do núcleo do jogo. Pelo que estudei, o melhor lugar para inicializar e dar o system->init() é na classe CCore (dentro de CCore.cpp do projeto ClientCore).
+
+Update Loop: Preciso colocar o system->update() na função de loop da engine (provavelmente o CCore::DoPulse ou equivalente) e garantir que a posição do listener do FMOD seja atualizada com as coordenadas da câmera do jogador do GTA.
+
+Ponte com Lua: Após a engine do FMOD estar rodando sob os panos, precisaremos criar as funções C++ que serão exportadas para o Lua (ex: fmodCreateSound, fmodSetPitch) lá no módulo de deathmatch.
+
+Com base nesse contexto, por favor, me mostre como podemos criar a classe gerenciadora do FMOD (ex: CFMODManager) e como eu injeto exatamente a inicialização e o update dela dentro do CCore.cpp da source do mtasa-blue.

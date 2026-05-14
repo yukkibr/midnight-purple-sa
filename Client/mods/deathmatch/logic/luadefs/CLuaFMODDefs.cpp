@@ -35,6 +35,8 @@ static bool ResolveResourcePath(lua_State* luaVM, CLuaManager* pLuaManager, SStr
     return pResource != nullptr;
 }
 
+std::unordered_map<void*, std::vector<uint32_t>> CLuaFMODDefs::s_resourceSounds;
+
 void CLuaFMODDefs::LoadFunctions()
 {
     constexpr static const std::pair<const char*, lua_CFunction> functions[]{
@@ -71,6 +73,24 @@ void CLuaFMODDefs::LoadFunctions()
         // Echo DSP
         {"fmodSetChannelEcho",    FMODSetChannelEcho},
         {"fmodRemoveChannelEcho", FMODRemoveChannelEcho},
+        // Low-pass / high-pass filters
+        {"fmodSetChannelLowPass",     FMODSetChannelLowPass},
+        {"fmodRemoveChannelLowPass",  FMODRemoveChannelLowPass},
+        {"fmodSetChannelHighPass",    FMODSetChannelHighPass},
+        {"fmodRemoveChannelHighPass", FMODRemoveChannelHighPass},
+        // Flanger
+        {"fmodSetChannelFlanger",     FMODSetChannelFlanger},
+        {"fmodRemoveChannelFlanger",  FMODRemoveChannelFlanger},
+        // Chorus
+        {"fmodSetChannelChorus",      FMODSetChannelChorus},
+        {"fmodRemoveChannelChorus",   FMODRemoveChannelChorus},
+        // Distortion
+        {"fmodSetChannelDistortion",     FMODSetChannelDistortion},
+        {"fmodRemoveChannelDistortion",  FMODRemoveChannelDistortion},
+        // Volume categories
+        {"fmodSetChannelCategory", FMODSetChannelCategory},
+        {"fmodSetCategoryVolume",  FMODSetCategoryVolume},
+        {"fmodGetCategoryVolume",  FMODGetCategoryVolume},
         // Master volume
         {"fmodSetMasterVolume",   FMODSetMasterVolume},
         {"fmodGetMasterVolume",   FMODGetMasterVolume},
@@ -133,6 +153,7 @@ int CLuaFMODDefs::FMODCreateSound(lua_State* luaVM)
     uint32_t soundId = g_pCore->FMODCreateSound(strPath.c_str(), b3D, bLoop);
     if (soundId == 0) { FMOD_PUSH_ERROR(luaVM); }
 
+    TrackSound(luaVM, soundId);
     lua_pushinteger(luaVM, static_cast<lua_Integer>(soundId));
     return 1;
 }
@@ -166,6 +187,7 @@ int CLuaFMODDefs::FMODCreateStream(lua_State* luaVM)
     uint32_t soundId = g_pCore->FMODCreateStream(strPath.c_str(), b3D, bLoop);
     if (soundId == 0) { FMOD_PUSH_ERROR(luaVM); }
 
+    TrackSound(luaVM, soundId);
     lua_pushinteger(luaVM, static_cast<lua_Integer>(soundId));
     return 1;
 }
@@ -200,6 +222,7 @@ int CLuaFMODDefs::FMODCreateSoundFromMemory(lua_State* luaVM)
     uint32_t soundId = g_pCore->FMODCreateSoundFromMemory(strData.data(), strData.size(), b3D, bLoop);
     if (soundId == 0) { FMOD_PUSH_ERROR(luaVM); }
 
+    TrackSound(luaVM, soundId);
     lua_pushinteger(luaVM, static_cast<lua_Integer>(soundId));
     return 1;
 }
@@ -219,6 +242,7 @@ int CLuaFMODDefs::FMODFreeSound(lua_State* luaVM)
         return 1;
     }
 
+    UntrackSound(soundId);
     g_pCore->FMODFreeSound(soundId);
     lua_pushboolean(luaVM, true);
     return 1;
@@ -759,4 +783,373 @@ int CLuaFMODDefs::FMODGetParameter(lua_State* luaVM)
     float value = g_pCore->FMODGetParameter(strName.c_str(), defaultValue);
     lua_pushnumber(luaVM, static_cast<lua_Number>(value));
     return 1;
+}
+
+// ─── Low-pass filter ─────────────────────────────────────────────────────────
+
+// fmodSetChannelLowPass(channelId, cutoffHz [, resonance=1.0]) -> bool
+int CLuaFMODDefs::FMODSetChannelLowPass(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+    float    cutoffHz  = 5000.0f;
+    float    resonance = 1.0f;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+    argStream.ReadNumber(cutoffHz);
+    argStream.ReadNumber(resonance, 1.0f);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (!g_pCore->FMODApplyChannelLowPass(channelId, cutoffHz, resonance)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// fmodRemoveChannelLowPass(channelId) -> bool
+int CLuaFMODDefs::FMODRemoveChannelLowPass(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (!g_pCore->FMODRemoveChannelLowPass(channelId)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// ─── High-pass filter ────────────────────────────────────────────────────────
+
+// fmodSetChannelHighPass(channelId, cutoffHz [, resonance=1.0]) -> bool
+int CLuaFMODDefs::FMODSetChannelHighPass(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+    float    cutoffHz  = 250.0f;
+    float    resonance = 1.0f;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+    argStream.ReadNumber(cutoffHz);
+    argStream.ReadNumber(resonance, 1.0f);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (!g_pCore->FMODApplyChannelHighPass(channelId, cutoffHz, resonance)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// fmodRemoveChannelHighPass(channelId) -> bool
+int CLuaFMODDefs::FMODRemoveChannelHighPass(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (!g_pCore->FMODRemoveChannelHighPass(channelId)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// ─── Flanger DSP ─────────────────────────────────────────────────────────────
+
+// fmodSetChannelFlanger(channelId, mix, depth, rate) -> bool
+// mix: 0–100%, depth: 0.01–1.0, rate: 0–20 Hz
+int CLuaFMODDefs::FMODSetChannelFlanger(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+    float    mix       = 50.0f;
+    float    depth     = 1.0f;
+    float    rate      = 0.1f;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+    argStream.ReadNumber(mix);
+    argStream.ReadNumber(depth);
+    argStream.ReadNumber(rate);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (!g_pCore->FMODApplyChannelFlanger(channelId, mix, depth, rate)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// fmodRemoveChannelFlanger(channelId) -> bool
+int CLuaFMODDefs::FMODRemoveChannelFlanger(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (!g_pCore->FMODRemoveChannelFlanger(channelId)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// ─── Chorus DSP ──────────────────────────────────────────────────────────────
+
+// fmodSetChannelChorus(channelId, mix, depth, rate) -> bool
+// mix: 0–100%, depth: 0–100%, rate: 0–20 Hz
+int CLuaFMODDefs::FMODSetChannelChorus(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+    float    mix       = 50.0f;
+    float    depth     = 50.0f;
+    float    rate      = 0.8f;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+    argStream.ReadNumber(mix);
+    argStream.ReadNumber(depth);
+    argStream.ReadNumber(rate);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (!g_pCore->FMODApplyChannelChorus(channelId, mix, depth, rate)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// fmodRemoveChannelChorus(channelId) -> bool
+int CLuaFMODDefs::FMODRemoveChannelChorus(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (!g_pCore->FMODRemoveChannelChorus(channelId)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// ─── Distortion DSP ──────────────────────────────────────────────────────────
+
+// fmodSetChannelDistortion(channelId, level) -> bool
+// level: 0.0 (clean) – 1.0 (full clip)
+int CLuaFMODDefs::FMODSetChannelDistortion(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+    float    level     = 0.5f;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+    argStream.ReadNumber(level);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (!g_pCore->FMODApplyChannelDistortion(channelId, level)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// fmodRemoveChannelDistortion(channelId) -> bool
+int CLuaFMODDefs::FMODRemoveChannelDistortion(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (!g_pCore->FMODRemoveChannelDistortion(channelId)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// ─── Volume categories ────────────────────────────────────────────────────────
+
+// fmodSetChannelCategory(channelId, category) -> bool
+// category: "sfx"|"ambient"|"music" or 0/1/2
+int CLuaFMODDefs::FMODSetChannelCategory(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+    int      category  = 0;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (lua_type(luaVM, 2) == LUA_TSTRING)
+    {
+        SString strCat;
+        argStream.ReadString(strCat);
+        category = StringToCategory(strCat);
+    }
+    else
+    {
+        argStream.ReadNumber(category, 0);
+    }
+
+    if (!g_pCore->FMODSetChannelCategory(channelId, category)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// fmodSetCategoryVolume(category, volume) -> bool
+int CLuaFMODDefs::FMODSetCategoryVolume(lua_State* luaVM)
+{
+    int   category = 0;
+    float volume   = 1.0f;
+
+    CScriptArgReader argStream(luaVM);
+
+    if (lua_type(luaVM, 1) == LUA_TSTRING)
+    {
+        SString strCat;
+        argStream.ReadString(strCat);
+        category = StringToCategory(strCat);
+    }
+    else
+    {
+        argStream.ReadNumber(category, 0);
+    }
+    argStream.ReadNumber(volume);
+
+    if (argStream.HasErrors())
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    volume = volume < 0.0f ? 0.0f : (volume > 1.0f ? 1.0f : volume);
+    if (!g_pCore->FMODSetCategoryVolume(category, volume)) { FMOD_PUSH_ERROR(luaVM); }
+    lua_pushboolean(luaVM, true);
+    return 1;
+}
+
+// fmodGetCategoryVolume(category) -> number
+int CLuaFMODDefs::FMODGetCategoryVolume(lua_State* luaVM)
+{
+    int category = 0;
+
+    CScriptArgReader argStream(luaVM);
+
+    if (lua_type(luaVM, 1) == LUA_TSTRING)
+    {
+        SString strCat;
+        argStream.ReadString(strCat);
+        category = StringToCategory(strCat);
+    }
+    else
+    {
+        argStream.ReadNumber(category, 0);
+    }
+
+    lua_pushnumber(luaVM, static_cast<lua_Number>(g_pCore->FMODGetCategoryVolume(category)));
+    return 1;
+}
+
+// ─── Resource tracking ────────────────────────────────────────────────────────
+
+void CLuaFMODDefs::TrackSound(lua_State* luaVM, uint32_t soundId)
+{
+    CLuaMain* pLuaMain = m_pLuaManager->GetVirtualMachine(luaVM);
+    if (pLuaMain)
+        s_resourceSounds[static_cast<void*>(pLuaMain)].push_back(soundId);
+}
+
+void CLuaFMODDefs::UntrackSound(uint32_t soundId)
+{
+    for (auto& [key, vec] : s_resourceSounds)
+    {
+        for (auto it = vec.begin(); it != vec.end(); ++it)
+        {
+            if (*it == soundId)
+            {
+                vec.erase(it);
+                return;
+            }
+        }
+    }
+}
+
+int CLuaFMODDefs::StringToCategory(const SString& name)
+{
+    if (name == "ambient") return 1;
+    if (name == "music")   return 2;
+    return 0;  // "sfx" or unrecognised → SFX
+}
+
+void CLuaFMODDefs::OnLuaMainRemoved(CLuaMain* pLuaMain)
+{
+    void* key = static_cast<void*>(pLuaMain);
+    auto  it  = s_resourceSounds.find(key);
+    if (it == s_resourceSounds.end())
+        return;
+
+    for (uint32_t soundId : it->second)
+        g_pCore->FMODFreeSound(soundId);
+
+    s_resourceSounds.erase(it);
 }

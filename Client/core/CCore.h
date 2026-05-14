@@ -330,6 +330,19 @@ public:
     float       FMODGetMasterVolume() const override;
     bool        FMODApplyChannelEcho(uint32_t channelId, float delayMS, float feedbackPct, float wetDB) override;
     bool        FMODRemoveChannelEcho(uint32_t channelId) override;
+    bool        FMODApplyChannelLowPass(uint32_t channelId, float cutoffHz, float resonance = 1.0f) override;
+    bool        FMODRemoveChannelLowPass(uint32_t channelId) override;
+    bool        FMODApplyChannelHighPass(uint32_t channelId, float cutoffHz, float resonance = 1.0f) override;
+    bool        FMODRemoveChannelHighPass(uint32_t channelId) override;
+    bool        FMODApplyChannelFlanger(uint32_t channelId, float mix, float depth, float rate) override;
+    bool        FMODRemoveChannelFlanger(uint32_t channelId) override;
+    bool        FMODApplyChannelChorus(uint32_t channelId, float mix, float depth, float rate) override;
+    bool        FMODRemoveChannelChorus(uint32_t channelId) override;
+    bool        FMODApplyChannelDistortion(uint32_t channelId, float level) override;
+    bool        FMODRemoveChannelDistortion(uint32_t channelId) override;
+    bool        FMODSetChannelCategory(uint32_t channelId, int category) override;
+    bool        FMODSetCategoryVolume(int category, float volume) override;
+    float       FMODGetCategoryVolume(int category) const override;
     void        FMODSetParameter(const char* name, float value) override;
     float       FMODGetParameter(const char* name, float defaultValue) override;
 

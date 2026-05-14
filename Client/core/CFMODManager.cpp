@@ -9,8 +9,22 @@
 #include "StdInc.h"
 #include "CFMODManager.h"
 #include <fmod_errors.h>
+#include <cmath>
 
-CFMODManager::CFMODManager() : m_pSystem(nullptr), m_pMasterGroup(nullptr), m_reverbProps([]{ FMOD_REVERB_PROPERTIES p = FMOD_PRESET_OFF; return p; }())
+// ─── Static helpers ───────────────────────────────────────────────────────────
+
+float CFMODManager::DBToLinear(float dB) noexcept
+{
+    if (dB <= -80.0f)
+        return 0.0f;
+    float linear = std::pow(10.0f, dB / 20.0f);
+    return linear > 1.0f ? 1.0f : linear;
+}
+
+// ─── Constructor / destructor ─────────────────────────────────────────────────
+
+CFMODManager::CFMODManager() : m_pSystem(nullptr), m_pMasterGroup(nullptr),
+    m_reverbProps([]{ FMOD_REVERB_PROPERTIES p = FMOD_PRESET_OFF; return p; }())
 {
     m_lastResult = FMOD::System_Create(&m_pSystem);
     if (m_lastResult != FMOD_OK)
@@ -20,12 +34,9 @@ CFMODManager::CFMODManager() : m_pSystem(nullptr), m_pMasterGroup(nullptr), m_re
         return;
     }
 
-    // Force stereo output so 3D panning is always L/R (must be before init)
     m_pSystem->setSoftwareFormat(44100, FMOD_SPEAKERMODE_STEREO, 0);
 
     // GTA:SA is right-handed (Z=up, Y=north, X=east).
-    // FMOD_INIT_3D_RIGHTHANDED makes FMOD's internal cross products match that convention,
-    // giving correct left/right panning as the camera rotates.
     m_lastResult = m_pSystem->init(512, FMOD_INIT_3D_RIGHTHANDED, nullptr);
     if (m_lastResult != FMOD_OK)
     {
@@ -35,14 +46,21 @@ CFMODManager::CFMODManager() : m_pSystem(nullptr), m_pMasterGroup(nullptr), m_re
         return;
     }
 
-    // 1 GTA unit ≈ 1 metre; distanceFactor=1.0 keeps FMOD distances in world units.
+    // 1 GTA unit ≈ 1 metre
     m_pSystem->set3DSettings(1.0f, 1.0f, 1.0f);
 
-    // All sounds route through the master channel group for global volume control.
-    // Default 0.5 so FMOD doesn't overpower BASS (both mix at OS level).
     m_pSystem->getMasterChannelGroup(&m_pMasterGroup);
     if (m_pMasterGroup)
         m_pMasterGroup->setVolume(0.5f);
+
+    // Volume categories: SFX, Ambient, Music — all sub-groups of master
+    const char* catNames[CAT_COUNT] = {"SFX", "Ambient", "Music"};
+    for (int i = 0; i < CAT_COUNT; ++i)
+    {
+        m_pSystem->createChannelGroup(catNames[i], &m_pCategoryGroups[i]);
+        if (m_pCategoryGroups[i] && m_pMasterGroup)
+            m_pMasterGroup->addGroup(m_pCategoryGroups[i]);
+    }
 
     WriteDebugEvent(SString("CFMODManager: initialized — version %s", GetVersion().c_str()));
 }
@@ -69,12 +87,45 @@ SString CFMODManager::GetVersion() const
     unsigned int ver = 0;
     m_pSystem->getVersion(&ver);
 
-    // FMOD version is 0x00AABBCC: AA=product, BB=major, CC=minor
     unsigned int major = (ver >> 16) & 0xff;
     unsigned int minor = (ver >>  8) & 0xff;
     unsigned int patch =  ver        & 0xff;
     return SString("%u.%02u.%02u", major, minor, patch);
 }
+
+// ─── Private helpers ──────────────────────────────────────────────────────────
+
+FMOD::ChannelGroup* CFMODManager::GetCategoryGroup(int category) const
+{
+    if (category >= 0 && category < CAT_COUNT && m_pCategoryGroups[category])
+        return m_pCategoryGroups[category];
+    return m_pMasterGroup;
+}
+
+void CFMODManager::ReleaseChannelDSPs(uint32_t channelId, bool removeFirst)
+{
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end())
+        return;
+
+    ChannelInfo& info = it->second;
+    FMOD::DSP** slots[] = {
+        &info.pEchoDSP, &info.pLowPassDSP, &info.pHighPassDSP,
+        &info.pFlangerDSP, &info.pChorusDSP, &info.pDistortionDSP
+    };
+    for (FMOD::DSP** pp : slots)
+    {
+        if (*pp)
+        {
+            if (removeFirst)
+                info.pChannel->removeDSP(*pp);
+            (*pp)->release();
+            *pp = nullptr;
+        }
+    }
+}
+
+// ─── Frame update ─────────────────────────────────────────────────────────────
 
 void CFMODManager::Update(const CVector& vecPosition, const CVector& vecForward, const CVector& vecUp)
 {
@@ -88,18 +139,15 @@ void CFMODManager::Update(const CVector& vecPosition, const CVector& vecForward,
 
     m_pSystem->set3DListenerAttributes(0, &pos, &vel, &forward, &up);
 
-    // Purge finished channels so m_channels doesn't grow unbounded
+    // Purge finished channels — release all attached DSPs without removeDSP
+    // (channel is already dead, removeDSP would be a no-op or error)
     for (auto it = m_channels.begin(); it != m_channels.end();)
     {
         bool isPlaying = false;
         FMOD_RESULT r  = it->second.pChannel->isPlaying(&isPlaying);
         if (r == FMOD_ERR_INVALID_HANDLE || (r == FMOD_OK && !isPlaying))
         {
-            if (it->second.pEchoDSP)
-            {
-                it->second.pEchoDSP->release();
-                it->second.pEchoDSP = nullptr;
-            }
+            ReleaseChannelDSPs(it->first, false);
             it = m_channels.erase(it);
         }
         else
@@ -201,9 +249,10 @@ uint32_t CFMODManager::PlaySound(uint32_t soundId, float x, float y, float z, fl
         return 0;
     }
 
-    FMOD::Channel* pChannel = nullptr;
-    // Start paused so we can set 3D attributes before the first audio frame.
-    m_lastResult = m_pSystem->playSound(it->second.pSound, m_pMasterGroup, true, &pChannel);
+    // Default to SFX category group; call SetChannelCategory to move it later
+    FMOD::ChannelGroup* pGroup  = GetCategoryGroup(CAT_SFX);
+    FMOD::Channel*      pChannel = nullptr;
+    m_lastResult = m_pSystem->playSound(it->second.pSound, pGroup, true, &pChannel);
     if (m_lastResult != FMOD_OK)
         return 0;
 
@@ -213,8 +262,8 @@ uint32_t CFMODManager::PlaySound(uint32_t soundId, float x, float y, float z, fl
     pChannel->set3DMinMaxDistance(minDist, maxDist);
     pChannel->setPaused(false);
 
-    uint32_t channelId      = m_nextChannelId++;
-    m_channels[channelId]   = {pChannel, nullptr, it->second.b3D, -999.0f};
+    uint32_t channelId    = m_nextChannelId++;
+    m_channels[channelId] = {pChannel, {}, {}, {}, {}, {}, {}, it->second.b3D, CAT_SFX, -999.0f};
     return channelId;
 }
 
@@ -234,11 +283,7 @@ FMOD::Channel* CFMODManager::GetChannel(uint32_t channelId)
 
     if (r == FMOD_ERR_INVALID_HANDLE || (r == FMOD_OK && !isPlaying))
     {
-        if (it->second.pEchoDSP)
-        {
-            it->second.pEchoDSP->release();
-            it->second.pEchoDSP = nullptr;
-        }
+        ReleaseChannelDSPs(channelId, false);
         m_channels.erase(it);
         m_lastResult = FMOD_ERR_INVALID_HANDLE;
         return nullptr;
@@ -262,13 +307,8 @@ bool CFMODManager::StopChannel(uint32_t channelId)
     bool        isPlaying = false;
     FMOD_RESULT r         = info.pChannel->isPlaying(&isPlaying);
 
-    if (info.pEchoDSP)
-    {
-        if (r != FMOD_ERR_INVALID_HANDLE)
-            info.pChannel->removeDSP(info.pEchoDSP);
-        info.pEchoDSP->release();
-        info.pEchoDSP = nullptr;
-    }
+    // Remove DSPs before stopping so FMOD cleans up the DSP chain properly
+    ReleaseChannelDSPs(channelId, r != FMOD_ERR_INVALID_HANDLE);
 
     if (r != FMOD_ERR_INVALID_HANDLE)
         info.pChannel->stop();
@@ -349,7 +389,7 @@ bool CFMODManager::SetChannelVelocity(uint32_t channelId, float vx, float vy, fl
 
     if (!it->second.b3D)
     {
-        m_lastResult = FMOD_ERR_INVALID_PARAM;   // velocity only meaningful for 3D channels
+        m_lastResult = FMOD_ERR_INVALID_PARAM;
         return false;
     }
 
@@ -357,7 +397,6 @@ bool CFMODManager::SetChannelVelocity(uint32_t channelId, float vx, float vy, fl
     if (!pChannel)
         return false;
 
-    // Fetch current position so we don't accidentally reset it
     FMOD_VECTOR currentPos = {0.f, 0.f, 0.f};
     FMOD_VECTOR oldVel     = {0.f, 0.f, 0.f};
     pChannel->get3DAttributes(&currentPos, &oldVel);
@@ -379,8 +418,6 @@ bool CFMODManager::SetChannelLooped(uint32_t channelId, bool bLoop)
 
     FMOD_MODE currentMode = 0;
     pChannel->getMode(&currentMode);
-
-    // Clear both loop flags then apply the requested one
     currentMode &= ~(FMOD_LOOP_NORMAL | FMOD_LOOP_BIDI | FMOD_LOOP_OFF);
     currentMode |= bLoop ? FMOD_LOOP_NORMAL : FMOD_LOOP_OFF;
 
@@ -504,13 +541,14 @@ void CFMODManager::SetReverbPreset(const char* presetName)
     m_reverbProps = props;
     m_lastResult  = m_pSystem->setReverbProperties(0, &m_reverbProps);
 
+    // Re-apply stored wet level for all opted-in channels (dB → linear)
     for (auto& [id, info] : m_channels)
     {
         if (info.reverbWet < -900.0f)
             continue;
         bool isPlaying = false;
         if (info.pChannel->isPlaying(&isPlaying) == FMOD_OK && isPlaying)
-            info.pChannel->setReverbProperties(0, info.reverbWet);
+            info.pChannel->setReverbProperties(0, DBToLinear(info.reverbWet));
     }
 }
 
@@ -528,7 +566,8 @@ bool CFMODManager::SetChannelReverbWet(uint32_t channelId, float wetDB)
         return false;
 
     it->second.reverbWet = wetDB;
-    m_lastResult         = pChannel->setReverbProperties(0, wetDB);
+    // FMOD::Channel::setReverbProperties takes a LINEAR 0-1 wet send, not dB
+    m_lastResult = pChannel->setReverbProperties(0, DBToLinear(wetDB));
     return m_lastResult == FMOD_OK;
 }
 
@@ -546,7 +585,7 @@ void CFMODManager::SetReverbWetLevel(float wetDB)
             continue;
         bool isPlaying = false;
         if (info.pChannel->isPlaying(&isPlaying) == FMOD_OK && isPlaying)
-            info.pChannel->setReverbProperties(0, info.reverbWet);
+            info.pChannel->setReverbProperties(0, DBToLinear(info.reverbWet));
     }
 }
 
@@ -564,6 +603,46 @@ float CFMODManager::GetMasterVolume() const
         return 0.0f;
     float volume = 0.0f;
     m_pMasterGroup->getVolume(&volume);
+    return volume;
+}
+
+// ─── Volume categories ────────────────────────────────────────────────────────
+
+bool CFMODManager::SetChannelCategory(uint32_t channelId, int category)
+{
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end())
+    {
+        m_lastResult = FMOD_ERR_INVALID_HANDLE;
+        return false;
+    }
+
+    FMOD::ChannelGroup* pGroup = GetCategoryGroup(category);
+    m_lastResult = it->second.pChannel->setChannelGroup(pGroup);
+    if (m_lastResult == FMOD_OK)
+        it->second.category = category;
+    return m_lastResult == FMOD_OK;
+}
+
+bool CFMODManager::SetCategoryVolume(int category, float volume)
+{
+    FMOD::ChannelGroup* pGroup = GetCategoryGroup(category);
+    if (!pGroup)
+    {
+        m_lastResult = FMOD_ERR_INVALID_PARAM;
+        return false;
+    }
+    m_lastResult = pGroup->setVolume(volume);
+    return m_lastResult == FMOD_OK;
+}
+
+float CFMODManager::GetCategoryVolume(int category) const
+{
+    FMOD::ChannelGroup* pGroup = GetCategoryGroup(category);
+    if (!pGroup)
+        return 0.0f;
+    float volume = 0.0f;
+    pGroup->getVolume(&volume);
     return volume;
 }
 
@@ -590,7 +669,7 @@ bool CFMODManager::ApplyChannelEcho(uint32_t channelId, float delayMS, float fee
     FMOD_RESULT r         = info.pChannel->isPlaying(&isPlaying);
     if (r == FMOD_ERR_INVALID_HANDLE || (r == FMOD_OK && !isPlaying))
     {
-        if (info.pEchoDSP) { info.pEchoDSP->release(); info.pEchoDSP = nullptr; }
+        ReleaseChannelDSPs(channelId, false);
         m_channels.erase(it);
         m_lastResult = FMOD_ERR_INVALID_HANDLE;
         return false;
@@ -651,6 +730,308 @@ bool CFMODManager::RemoveChannelEcho(uint32_t channelId)
     info.pEchoDSP->release();
     info.pEchoDSP = nullptr;
     m_lastResult  = FMOD_OK;
+    return true;
+}
+
+// ─── Low-pass filter ─────────────────────────────────────────────────────────
+
+bool CFMODManager::ApplyChannelLowPass(uint32_t channelId, float cutoffHz, float resonance)
+{
+    if (!m_pSystem) { m_lastResult = FMOD_ERR_UNINITIALIZED; return false; }
+
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+    bool isPlaying = false;
+    FMOD_RESULT r = info.pChannel->isPlaying(&isPlaying);
+    if (r == FMOD_ERR_INVALID_HANDLE || (r == FMOD_OK && !isPlaying))
+    {
+        ReleaseChannelDSPs(channelId, false);
+        m_channels.erase(it);
+        m_lastResult = FMOD_ERR_INVALID_HANDLE;
+        return false;
+    }
+
+    if (info.pLowPassDSP)
+    {
+        info.pLowPassDSP->setParameterFloat(FMOD_DSP_LOWPASS_CUTOFF, cutoffHz);
+        m_lastResult = info.pLowPassDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, resonance);
+    }
+    else
+    {
+        FMOD::DSP* pDSP = nullptr;
+        m_lastResult = m_pSystem->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &pDSP);
+        if (m_lastResult != FMOD_OK) return false;
+
+        pDSP->setParameterFloat(FMOD_DSP_LOWPASS_CUTOFF,    cutoffHz);
+        pDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, resonance);
+
+        m_lastResult = info.pChannel->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, pDSP);
+        if (m_lastResult != FMOD_OK) { pDSP->release(); return false; }
+
+        info.pLowPassDSP = pDSP;
+    }
+    return m_lastResult == FMOD_OK;
+}
+
+bool CFMODManager::RemoveChannelLowPass(uint32_t channelId)
+{
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+    if (!info.pLowPassDSP) { m_lastResult = FMOD_ERR_DSP_NOTFOUND; return false; }
+
+    bool isPlaying = false;
+    if (info.pChannel->isPlaying(&isPlaying) != FMOD_ERR_INVALID_HANDLE)
+        info.pChannel->removeDSP(info.pLowPassDSP);
+
+    info.pLowPassDSP->release();
+    info.pLowPassDSP = nullptr;
+    m_lastResult = FMOD_OK;
+    return true;
+}
+
+// ─── High-pass filter ────────────────────────────────────────────────────────
+
+bool CFMODManager::ApplyChannelHighPass(uint32_t channelId, float cutoffHz, float resonance)
+{
+    if (!m_pSystem) { m_lastResult = FMOD_ERR_UNINITIALIZED; return false; }
+
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+    bool isPlaying = false;
+    FMOD_RESULT r = info.pChannel->isPlaying(&isPlaying);
+    if (r == FMOD_ERR_INVALID_HANDLE || (r == FMOD_OK && !isPlaying))
+    {
+        ReleaseChannelDSPs(channelId, false);
+        m_channels.erase(it);
+        m_lastResult = FMOD_ERR_INVALID_HANDLE;
+        return false;
+    }
+
+    if (info.pHighPassDSP)
+    {
+        info.pHighPassDSP->setParameterFloat(FMOD_DSP_HIGHPASS_CUTOFF, cutoffHz);
+        m_lastResult = info.pHighPassDSP->setParameterFloat(FMOD_DSP_HIGHPASS_RESONANCE, resonance);
+    }
+    else
+    {
+        FMOD::DSP* pDSP = nullptr;
+        m_lastResult = m_pSystem->createDSPByType(FMOD_DSP_TYPE_HIGHPASS, &pDSP);
+        if (m_lastResult != FMOD_OK) return false;
+
+        pDSP->setParameterFloat(FMOD_DSP_HIGHPASS_CUTOFF,    cutoffHz);
+        pDSP->setParameterFloat(FMOD_DSP_HIGHPASS_RESONANCE, resonance);
+
+        m_lastResult = info.pChannel->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, pDSP);
+        if (m_lastResult != FMOD_OK) { pDSP->release(); return false; }
+
+        info.pHighPassDSP = pDSP;
+    }
+    return m_lastResult == FMOD_OK;
+}
+
+bool CFMODManager::RemoveChannelHighPass(uint32_t channelId)
+{
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+    if (!info.pHighPassDSP) { m_lastResult = FMOD_ERR_DSP_NOTFOUND; return false; }
+
+    bool isPlaying = false;
+    if (info.pChannel->isPlaying(&isPlaying) != FMOD_ERR_INVALID_HANDLE)
+        info.pChannel->removeDSP(info.pHighPassDSP);
+
+    info.pHighPassDSP->release();
+    info.pHighPassDSP = nullptr;
+    m_lastResult = FMOD_OK;
+    return true;
+}
+
+// ─── Flanger DSP ─────────────────────────────────────────────────────────────
+
+bool CFMODManager::ApplyChannelFlanger(uint32_t channelId, float mix, float depth, float rate)
+{
+    if (!m_pSystem) { m_lastResult = FMOD_ERR_UNINITIALIZED; return false; }
+
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+    bool isPlaying = false;
+    FMOD_RESULT r = info.pChannel->isPlaying(&isPlaying);
+    if (r == FMOD_ERR_INVALID_HANDLE || (r == FMOD_OK && !isPlaying))
+    {
+        ReleaseChannelDSPs(channelId, false);
+        m_channels.erase(it);
+        m_lastResult = FMOD_ERR_INVALID_HANDLE;
+        return false;
+    }
+
+    if (info.pFlangerDSP)
+    {
+        info.pFlangerDSP->setParameterFloat(FMOD_DSP_FLANGE_MIX,   mix);
+        info.pFlangerDSP->setParameterFloat(FMOD_DSP_FLANGE_DEPTH, depth);
+        m_lastResult = info.pFlangerDSP->setParameterFloat(FMOD_DSP_FLANGE_RATE, rate);
+    }
+    else
+    {
+        FMOD::DSP* pDSP = nullptr;
+        m_lastResult = m_pSystem->createDSPByType(FMOD_DSP_TYPE_FLANGE, &pDSP);
+        if (m_lastResult != FMOD_OK) return false;
+
+        pDSP->setParameterFloat(FMOD_DSP_FLANGE_MIX,   mix);
+        pDSP->setParameterFloat(FMOD_DSP_FLANGE_DEPTH, depth);
+        pDSP->setParameterFloat(FMOD_DSP_FLANGE_RATE,  rate);
+
+        m_lastResult = info.pChannel->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, pDSP);
+        if (m_lastResult != FMOD_OK) { pDSP->release(); return false; }
+
+        info.pFlangerDSP = pDSP;
+    }
+    return m_lastResult == FMOD_OK;
+}
+
+bool CFMODManager::RemoveChannelFlanger(uint32_t channelId)
+{
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+    if (!info.pFlangerDSP) { m_lastResult = FMOD_ERR_DSP_NOTFOUND; return false; }
+
+    bool isPlaying = false;
+    if (info.pChannel->isPlaying(&isPlaying) != FMOD_ERR_INVALID_HANDLE)
+        info.pChannel->removeDSP(info.pFlangerDSP);
+
+    info.pFlangerDSP->release();
+    info.pFlangerDSP = nullptr;
+    m_lastResult = FMOD_OK;
+    return true;
+}
+
+// ─── Chorus DSP ──────────────────────────────────────────────────────────────
+
+bool CFMODManager::ApplyChannelChorus(uint32_t channelId, float mix, float depth, float rate)
+{
+    if (!m_pSystem) { m_lastResult = FMOD_ERR_UNINITIALIZED; return false; }
+
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+    bool isPlaying = false;
+    FMOD_RESULT r = info.pChannel->isPlaying(&isPlaying);
+    if (r == FMOD_ERR_INVALID_HANDLE || (r == FMOD_OK && !isPlaying))
+    {
+        ReleaseChannelDSPs(channelId, false);
+        m_channels.erase(it);
+        m_lastResult = FMOD_ERR_INVALID_HANDLE;
+        return false;
+    }
+
+    if (info.pChorusDSP)
+    {
+        info.pChorusDSP->setParameterFloat(FMOD_DSP_CHORUS_MIX,   mix);
+        info.pChorusDSP->setParameterFloat(FMOD_DSP_CHORUS_DEPTH, depth);
+        m_lastResult = info.pChorusDSP->setParameterFloat(FMOD_DSP_CHORUS_RATE, rate);
+    }
+    else
+    {
+        FMOD::DSP* pDSP = nullptr;
+        m_lastResult = m_pSystem->createDSPByType(FMOD_DSP_TYPE_CHORUS, &pDSP);
+        if (m_lastResult != FMOD_OK) return false;
+
+        pDSP->setParameterFloat(FMOD_DSP_CHORUS_MIX,   mix);
+        pDSP->setParameterFloat(FMOD_DSP_CHORUS_DEPTH, depth);
+        pDSP->setParameterFloat(FMOD_DSP_CHORUS_RATE,  rate);
+
+        m_lastResult = info.pChannel->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, pDSP);
+        if (m_lastResult != FMOD_OK) { pDSP->release(); return false; }
+
+        info.pChorusDSP = pDSP;
+    }
+    return m_lastResult == FMOD_OK;
+}
+
+bool CFMODManager::RemoveChannelChorus(uint32_t channelId)
+{
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+    if (!info.pChorusDSP) { m_lastResult = FMOD_ERR_DSP_NOTFOUND; return false; }
+
+    bool isPlaying = false;
+    if (info.pChannel->isPlaying(&isPlaying) != FMOD_ERR_INVALID_HANDLE)
+        info.pChannel->removeDSP(info.pChorusDSP);
+
+    info.pChorusDSP->release();
+    info.pChorusDSP = nullptr;
+    m_lastResult = FMOD_OK;
+    return true;
+}
+
+// ─── Distortion DSP ──────────────────────────────────────────────────────────
+
+bool CFMODManager::ApplyChannelDistortion(uint32_t channelId, float level)
+{
+    if (!m_pSystem) { m_lastResult = FMOD_ERR_UNINITIALIZED; return false; }
+
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+    bool isPlaying = false;
+    FMOD_RESULT r = info.pChannel->isPlaying(&isPlaying);
+    if (r == FMOD_ERR_INVALID_HANDLE || (r == FMOD_OK && !isPlaying))
+    {
+        ReleaseChannelDSPs(channelId, false);
+        m_channels.erase(it);
+        m_lastResult = FMOD_ERR_INVALID_HANDLE;
+        return false;
+    }
+
+    if (info.pDistortionDSP)
+    {
+        m_lastResult = info.pDistortionDSP->setParameterFloat(FMOD_DSP_DISTORTION_LEVEL, level);
+    }
+    else
+    {
+        FMOD::DSP* pDSP = nullptr;
+        m_lastResult = m_pSystem->createDSPByType(FMOD_DSP_TYPE_DISTORTION, &pDSP);
+        if (m_lastResult != FMOD_OK) return false;
+
+        pDSP->setParameterFloat(FMOD_DSP_DISTORTION_LEVEL, level);
+
+        m_lastResult = info.pChannel->addDSP(FMOD_CHANNELCONTROL_DSP_HEAD, pDSP);
+        if (m_lastResult != FMOD_OK) { pDSP->release(); return false; }
+
+        info.pDistortionDSP = pDSP;
+    }
+    return m_lastResult == FMOD_OK;
+}
+
+bool CFMODManager::RemoveChannelDistortion(uint32_t channelId)
+{
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+    if (!info.pDistortionDSP) { m_lastResult = FMOD_ERR_DSP_NOTFOUND; return false; }
+
+    bool isPlaying = false;
+    if (info.pChannel->isPlaying(&isPlaying) != FMOD_ERR_INVALID_HANDLE)
+        info.pChannel->removeDSP(info.pDistortionDSP);
+
+    info.pDistortionDSP->release();
+    info.pDistortionDSP = nullptr;
+    m_lastResult = FMOD_OK;
     return true;
 }
 

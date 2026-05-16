@@ -345,6 +345,8 @@ public:
     float       FMODGetCategoryVolume(int category) const override;
     void        FMODSetParameter(const char* name, float value) override;
     float       FMODGetParameter(const char* name, float defaultValue) override;
+    bool        FMODGetChannelEffects(uint32_t channelId, SString& outEffects) const override;
+    bool        FMODSetChannelOcclusion(uint32_t channelId, float directOcclusion, float reverbOcclusion) override;
 
 private:
     void ApplyCoreInitSettings();

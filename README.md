@@ -2,6 +2,8 @@
 
 > **This is an independent fork of [Multi Theft Auto: San Andreas](https://github.com/multitheftauto/mtasa-blue).**
 > Midnight Purple:SA is **not** affiliated with, endorsed by, or supported by the Multi Theft Auto development team. Issues, pull requests, and questions about this fork should be directed here — **do not** contact the MTA team about Midnight Purple-specific changes.
+>
+> **Upstream base:** [`5b7f91166`](https://github.com/multitheftauto/mtasa-blue/commit/5b7f91166) — synced 2026-05-16
 
 ---
 
@@ -86,6 +88,8 @@ All functions are available client-side. Sound and channel IDs are plain integer
 | `fmodRemoveChannelChorus(channelId)` | bool | Remove the chorus DSP. |
 | `fmodSetChannelDistortion(channelId, level)` | bool | Hard-clipping saturation. `level` 0.0 (clean) – 1.0 (full clip). |
 | `fmodRemoveChannelDistortion(channelId)` | bool | Remove the distortion DSP. |
+| `fmodGetChannelEffects(channelId)` | string / `false` | Returns a comma-separated string of active DSP names on the channel (e.g. `"Echo,LowPass"`), or `false` on error. Empty string means no DSPs are active. |
+| `fmodSetChannelOcclusion(channelId, directOcclusion [, reverbOcclusion])` | bool | Apply geometry-aware muffling to a channel. `directOcclusion` 0.0 (none) – 1.0 (fully blocked). `reverbOcclusion` defaults to `directOcclusion * 0.5`. FMOD applies a frequency-dependent LPF on the direct path — more natural than a flat cut. |
 
 **Volume categories**
 
@@ -131,13 +135,13 @@ Channels belong to one of three sub-groups under the master group. Category volu
 
 ### DSP / effects
 - [x] **Additional DSP types** — low-pass, high-pass, flanger, chorus, distortion, each exposed as `fmodSet/RemoveChannel*` pairs
-- [ ] **DSP chain query** — `fmodGetChannelEffects()` to list active DSPs on a channel
+- [x] **DSP chain query** — `fmodGetChannelEffects(channelId)` returns a comma-separated list of active DSP names on a live channel
 
 ### Architecture & scripting
 - [x] **Per-resource sound tracking** — sounds are automatically freed when the resource that created them stops, matching MTA's BASS behaviour
 - [x] **Volume categories** — independent volume scalars for SFX, Ambient, and Music sub-groups via `fmodSetCategoryVolume` / `fmodGetCategoryVolume`
-- [ ] **Server-triggered playback** — server Lua instructs clients to play a positioned FMOD sound, syncing audio events across players
-- [ ] **Occlusion / obstruction** — geometry-aware audio muffling when solid objects are between a sound source and the listener (FMOD Geometry API)
+- [x] **Server-triggered playback** — `fmod_sync` resource: server calls `exports.fmod_sync:playSound3D/2D/stopSound`; client caches assets and manages channel lifetime automatically
+- [x] **Occlusion / obstruction** — `fmodSetChannelOcclusion(ch, direct, reverb)` applies FMOD's native `set3DOcclusion`; `hikari_Engine` performs a throttled LOS raycast per vehicle and applies occlusion automatically on all looping channels
 
 ### Vehicle engine sounds (primary motivator)
 - [x] **Engine sound layer** — `hikari_Engine` resource fully migrated to FMOD: RPM-driven pitch/volume per channel, environmental reverb opt-in, smooth echo fade, Doppler
@@ -147,6 +151,7 @@ Channels belong to one of three sub-groups under the master group. Category volu
 - [x] **Tunnel echo & reverb** — independent raycast-based cover detection with hysteresis; looping channels fade reverb send proportional to `echoIntensity`; one-shot transients (backfire, BOV) receive both Echo DSP and reverb send for consistency
 - [x] **Air-absorption LPF** — non-local vehicles beyond 20 m receive a distance-proportional low-pass filter (20 kHz at 20 m → ~3.6 kHz at the audibility limit) simulating high-frequency atmospheric loss
 - [x] **Rev limiter distortion** — the high-RPM layer receives a brief `fmodSetChannelDistortion` while bouncing off the limiter, adding a metallic crunch character
+- [x] **Occlusion per vehicle** — throttled LOS raycast (200 ms) between listener and exhaust position; `fmodSetChannelOcclusion` applied to all looping channels when blocked, restoring clean signal when line-of-sight clears
 
 ### Quality of life
 - [x] **FMOD error propagation** — all FMOD-level failures return `false, errorCode, errorString`; `fmodGetLastError()` available at any time

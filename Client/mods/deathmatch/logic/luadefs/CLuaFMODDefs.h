@@ -92,6 +92,12 @@ public:
     LUA_DECLARE(FMODSetParameter);
     LUA_DECLARE(FMODGetParameter);
 
+    // DSP chain query
+    LUA_DECLARE(FMODGetChannelEffects);
+
+    // Occlusion / obstruction
+    LUA_DECLARE(FMODSetChannelOcclusion);
+
 private:
     // Per-resource sound tracking: LuaMain* → list of sound IDs it created
     static std::unordered_map<void*, std::vector<uint32_t>> s_resourceSounds;

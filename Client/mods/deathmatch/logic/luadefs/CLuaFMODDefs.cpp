@@ -97,6 +97,10 @@ void CLuaFMODDefs::LoadFunctions()
         // Named parameters
         {"fmodSetParameter",      FMODSetParameter},
         {"fmodGetParameter",      FMODGetParameter},
+        // DSP chain query
+        {"fmodGetChannelEffects",  FMODGetChannelEffects},
+        // Occlusion / obstruction
+        {"fmodSetChannelOcclusion", FMODSetChannelOcclusion},
     };
 
     for (const auto& [name, func] : functions)
@@ -1152,4 +1156,85 @@ void CLuaFMODDefs::OnLuaMainRemoved(CLuaMain* pLuaMain)
         g_pCore->FMODFreeSound(soundId);
 
     s_resourceSounds.erase(it);
+}
+
+// ─── DSP chain query ──────────────────────────────────────────────────────────
+
+// fmodGetChannelEffects(channelId) -> table  e.g. {"echo","lowpass"}
+// Returns an empty table when no DSPs are active; returns false when channelId is invalid.
+int CLuaFMODDefs::FMODGetChannelEffects(lua_State* luaVM)
+{
+    uint32_t channelId = 0;
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    SString csv;
+    if (!g_pCore->FMODGetChannelEffects(channelId, csv))
+    {
+        // Channel not found — return false so scripts can distinguish from "no DSPs"
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    lua_newtable(luaVM);
+    if (csv.empty())
+        return 1;  // valid channel, zero active DSPs → empty table
+
+    // Split comma-separated string into table entries
+    int  idx   = 1;
+    size_t start = 0;
+    size_t end;
+    while ((end = csv.find(',', start)) != SString::npos)
+    {
+        lua_pushlstring(luaVM, csv.c_str() + start, end - start);
+        lua_rawseti(luaVM, -2, idx++);
+        start = end + 1;
+    }
+    if (start < csv.size())
+    {
+        lua_pushstring(luaVM, csv.c_str() + start);
+        lua_rawseti(luaVM, -2, idx);
+    }
+    return 1;
+}
+
+// ─── Occlusion / obstruction ─────────────────────────────────────────────────
+
+// fmodSetChannelOcclusion(channelId, directOcclusion [, reverbOcclusion]) -> bool
+// directOcclusion  : 0.0 (no block) – 1.0 (fully blocked); FMOD applies frequency-dependent LPF
+// reverbOcclusion  : optional, defaults to directOcclusion * 0.5
+// Only effective on 3D channels; call with 0, 0 to clear.
+int CLuaFMODDefs::FMODSetChannelOcclusion(lua_State* luaVM)
+{
+    uint32_t channelId       = 0;
+    float    directOcclusion = 0.0f;
+    float    reverbOcclusion = -1.0f;   // sentinel → default to half of direct
+
+    CScriptArgReader argStream(luaVM);
+    argStream.ReadNumber(channelId);
+    argStream.ReadNumber(directOcclusion);
+    argStream.ReadNumber(reverbOcclusion, -1.0f);
+
+    if (argStream.HasErrors() || channelId == 0)
+    {
+        m_pScriptDebugging->LogCustom(luaVM, argStream.GetFullErrorMessage());
+        lua_pushboolean(luaVM, false);
+        return 1;
+    }
+
+    if (reverbOcclusion < 0.0f)
+        reverbOcclusion = directOcclusion * 0.5f;
+
+    if (!g_pCore->FMODSetChannelOcclusion(channelId, directOcclusion, reverbOcclusion)) { FMOD_PUSH_ERROR(luaVM); }
+
+    lua_pushboolean(luaVM, true);
+    return 1;
 }

@@ -1050,3 +1050,55 @@ float CFMODManager::GetParameter(const char* name, float defaultValue) const
     auto it = m_parameters.find(name);
     return (it != m_parameters.end()) ? it->second : defaultValue;
 }
+
+// ─── DSP chain query ──────────────────────────────────────────────────────────
+
+bool CFMODManager::GetChannelEffects(uint32_t channelId, SString& outEffects) const
+{
+    outEffects.clear();
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end())
+        return false;
+
+    const ChannelInfo& info = it->second;
+    auto append = [&](const char* name)
+    {
+        if (!outEffects.empty()) outEffects += ',';
+        outEffects += name;
+    };
+    if (info.pEchoDSP)       append("echo");
+    if (info.pLowPassDSP)    append("lowpass");
+    if (info.pHighPassDSP)   append("highpass");
+    if (info.pFlangerDSP)    append("flanger");
+    if (info.pChorusDSP)     append("chorus");
+    if (info.pDistortionDSP) append("distortion");
+    return true;
+}
+
+// ─── Occlusion / obstruction ─────────────────────────────────────────────────
+
+bool CFMODManager::SetChannelOcclusion(uint32_t channelId, float directOcclusion, float reverbOcclusion)
+{
+    if (!m_pSystem) { m_lastResult = FMOD_ERR_UNINITIALIZED; return false; }
+
+    auto it = m_channels.find(channelId);
+    if (it == m_channels.end()) { m_lastResult = FMOD_ERR_INVALID_HANDLE; return false; }
+
+    ChannelInfo& info = it->second;
+
+    bool isPlaying = false;
+    FMOD_RESULT r = info.pChannel->isPlaying(&isPlaying);
+    if (r == FMOD_ERR_INVALID_HANDLE || (r == FMOD_OK && !isPlaying))
+    {
+        ReleaseChannelDSPs(channelId, false);
+        m_channels.erase(it);
+        m_lastResult = FMOD_ERR_INVALID_HANDLE;
+        return false;
+    }
+
+    directOcclusion = directOcclusion < 0.0f ? 0.0f : (directOcclusion > 1.0f ? 1.0f : directOcclusion);
+    reverbOcclusion = reverbOcclusion < 0.0f ? 0.0f : (reverbOcclusion > 1.0f ? 1.0f : reverbOcclusion);
+
+    m_lastResult = info.pChannel->set3DOcclusion(directOcclusion, reverbOcclusion);
+    return m_lastResult == FMOD_OK;
+}

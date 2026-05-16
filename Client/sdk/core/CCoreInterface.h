@@ -264,6 +264,15 @@ public:
     // Named parameter store (drives the Lua ambience system)
     virtual void     FMODSetParameter(const char* name, float value) = 0;
     virtual float    FMODGetParameter(const char* name, float defaultValue) = 0;
+
+    // DSP chain query — fills outEffects with active DSP names ("echo","lowpass", …)
+    // Returns false when channelId is unknown; outEffects is empty but valid on true with no DSPs.
+    virtual bool     FMODGetChannelEffects(uint32_t channelId, SString& outEffects) const = 0;
+
+    // Occlusion — 3D channels only; FMOD applies a frequency-dependent LPF on the direct path.
+    // directOcclusion 0.0 (transparent) – 1.0 (fully blocked)
+    // reverbOcclusion 0.0 (reverb reaches listener) – 1.0 (reverb path blocked)
+    virtual bool     FMODSetChannelOcclusion(uint32_t channelId, float directOcclusion, float reverbOcclusion) = 0;
 };
 
 class CClientTime

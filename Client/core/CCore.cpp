@@ -1689,6 +1689,17 @@ float CCore::FMODGetParameter(const char* name, float defaultValue)
     return m_pFMODManager ? m_pFMODManager->GetParameter(name, defaultValue) : defaultValue;
 }
 
+bool CCore::FMODGetChannelEffects(uint32_t channelId, SString& outEffects) const
+{
+    if (!m_pFMODManager) { outEffects.clear(); return false; }
+    return m_pFMODManager->GetChannelEffects(channelId, outEffects);
+}
+
+bool CCore::FMODSetChannelOcclusion(uint32_t channelId, float directOcclusion, float reverbOcclusion)
+{
+    return m_pFMODManager && m_pFMODManager->SetChannelOcclusion(channelId, directOcclusion, reverbOcclusion);
+}
+
 // Called after MOD is unloaded
 void CCore::OnModUnload()
 {

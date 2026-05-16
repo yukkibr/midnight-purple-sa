@@ -103,6 +103,15 @@ public:
     void  SetParameter(const char* name, float value);
     float GetParameter(const char* name, float defaultValue = 0.0f) const;
 
+    // DSP chain query — returns a comma-separated list of active DSP names on a channel.
+    // Returns false if channelId is unknown; sets outEffects (may be empty string) on success.
+    bool GetChannelEffects(uint32_t channelId, SString& outEffects) const;
+
+    // Occlusion / obstruction — uses FMOD's native Channel::set3DOcclusion().
+    // directOcclusion : 0.0 (transparent) – 1.0 (fully blocked), FMOD applies a frequency-dependent LPF
+    // reverbOcclusion : 0.0 (full reverb reach) – 1.0 (reverb path blocked)
+    bool SetChannelOcclusion(uint32_t channelId, float directOcclusion, float reverbOcclusion);
+
     // Version string, e.g. "2.02.21"
     SString GetVersion() const;
 
